@@ -99,3 +99,17 @@ Thumbs.db
 # Project specific
 *.log
 .ruff_cache/
+
+# Data files
+*.csv
+*.sqlite
+*.db
+
+# Performance profiling
+perf.data
+*.prof
+*.pstat
+
+# AI / Editors
+.claude/
+.cursor/
