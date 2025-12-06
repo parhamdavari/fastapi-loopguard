@@ -74,6 +74,6 @@ coverage run -m pytest && coverage report
 
 ## Test Configuration
 
-- Uses `pytest-asyncio` with `asyncio_mode = "auto"`
+- Uses `pytest-asyncio` with `asyncio_mode = "auto"` and `asyncio_default_fixture_loop_scope = "function"`
 - Tests use `httpx.AsyncClient` with `ASGITransport` for testing ASGI apps
 - Each test clears the global `RequestRegistry` via `clear_registry` fixture
