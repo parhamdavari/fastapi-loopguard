@@ -10,7 +10,7 @@ import pytest
 # Enable pytester fixture for plugin integration tests
 pytest_plugins = ["pytester"]
 
-from fastapi_loopguard.pytest_plugin import BlockingDetector
+from fastapi_loopguard.pytest_plugin import BlockingDetector  # noqa: E402
 
 
 class TestBlockingDetector:
@@ -187,9 +187,7 @@ class TestPytestPluginIntegration:
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1)
 
-    def test_unmarked_test_ignores_blocking(
-        self, pytester: pytest.Pytester
-    ) -> None:
+    def test_unmarked_test_ignores_blocking(self, pytester: pytest.Pytester) -> None:
         """Test that unmarked tests ignore blocking (no failure)."""
         pytester.makepyfile("""
             import pytest
@@ -208,9 +206,7 @@ class TestPytestPluginIntegration:
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1)
 
-    def test_sync_test_with_marker_passes(
-        self, pytester: pytest.Pytester
-    ) -> None:
+    def test_sync_test_with_marker_passes(self, pytester: pytest.Pytester) -> None:
         """Test sync tests with marker are not affected (only async works)."""
         pytester.makepyfile("""
             import pytest
@@ -231,9 +227,7 @@ class TestPytestPluginIntegration:
         # Sync test passes because marker only wraps async functions
         result.assert_outcomes(passed=1)
 
-    def test_custom_threshold_from_ini(
-        self, pytester: pytest.Pytester
-    ) -> None:
+    def test_custom_threshold_from_ini(self, pytester: pytest.Pytester) -> None:
         """Test custom threshold is read from pytest.ini."""
         pytester.makepyfile("""
             import pytest
@@ -254,9 +248,7 @@ class TestPytestPluginIntegration:
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1)
 
-    def test_failure_message_format(
-        self, pytester: pytest.Pytester
-    ) -> None:
+    def test_failure_message_format(self, pytester: pytest.Pytester) -> None:
         """Test failure message contains expected information."""
         pytester.makepyfile("""
             import pytest

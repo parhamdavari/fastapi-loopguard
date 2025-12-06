@@ -7,9 +7,9 @@ import pytest
 # Skip all tests if prometheus_client is not installed
 prometheus_client = pytest.importorskip("prometheus_client")
 
-from prometheus_client import CollectorRegistry
+from prometheus_client import CollectorRegistry  # noqa: E402
 
-from fastapi_loopguard.metrics import (
+from fastapi_loopguard.metrics import (  # noqa: E402
     LoopGuardMetrics,
     create_metrics,
     get_metrics,
@@ -34,7 +34,7 @@ class TestLoopGuardMetrics:
 
     def test_init_creates_all_metrics(self, registry: CollectorRegistry) -> None:
         """Test that __init__ creates all 4 metrics."""
-        metrics = LoopGuardMetrics(prefix="test", registry=registry)
+        LoopGuardMetrics(prefix="test", registry=registry)
 
         # Check that metrics exist by getting metric family names
         # Note: prometheus_client strips _total suffix from counter names in collect()
@@ -46,7 +46,7 @@ class TestLoopGuardMetrics:
 
     def test_init_custom_prefix(self, registry: CollectorRegistry) -> None:
         """Test custom prefix is applied to all metrics."""
-        metrics = LoopGuardMetrics(prefix="myapp", registry=registry)
+        LoopGuardMetrics(prefix="myapp", registry=registry)
 
         metric_names = [m.name for m in registry.collect()]
         assert all(name.startswith("myapp_") for name in metric_names)
@@ -149,9 +149,7 @@ class TestMetricsFactoryFunctions:
         yield
         reset_metrics()
 
-    def test_create_metrics_returns_instance(
-        self, registry: CollectorRegistry
-    ) -> None:
+    def test_create_metrics_returns_instance(self, registry: CollectorRegistry) -> None:
         """Test create_metrics returns a LoopGuardMetrics instance."""
         metrics = create_metrics(prefix="test", registry=registry)
         assert isinstance(metrics, LoopGuardMetrics)
@@ -166,9 +164,7 @@ class TestMetricsFactoryFunctions:
 
         assert metrics1 is metrics2
 
-    def test_create_metrics_different_prefix(
-        self, registry: CollectorRegistry
-    ) -> None:
+    def test_create_metrics_different_prefix(self, registry: CollectorRegistry) -> None:
         """Test create_metrics returns different instance for different prefix."""
         registry2 = CollectorRegistry()
         metrics1 = create_metrics(prefix="app1", registry=registry)
@@ -188,7 +184,7 @@ class TestMetricsFactoryFunctions:
 
     def test_get_metrics_returns_existing(self, registry: CollectorRegistry) -> None:
         """Test get_metrics returns existing instance."""
-        created = create_metrics(prefix="findme", registry=registry)
+        create_metrics(prefix="findme", registry=registry)
         # Note: get_metrics uses just prefix, but cache key includes registry id
         # So it won't find it with default get_metrics(prefix)
         # This tests the intended behavior
@@ -235,7 +231,9 @@ class TestMetricsFactoryFunctions:
 class TestMetricsWithoutPrometheus:
     """Tests for behavior when prometheus_client is not installed."""
 
-    def test_runtime_error_without_prometheus(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_runtime_error_without_prometheus(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test RuntimeError raised when prometheus_client not available."""
         import fastapi_loopguard.metrics as metrics_module
 

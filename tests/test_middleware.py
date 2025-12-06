@@ -1,7 +1,9 @@
 """Tests for LoopGuardMiddleware."""
 
 import asyncio
+import contextlib
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import pytest
@@ -225,7 +227,7 @@ class TestLifespanEvents:
         startup_called = False
 
         @asynccontextmanager
-        async def lifespan(app: FastAPI):
+        async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             nonlocal startup_called
             startup_called = True
             yield
@@ -250,14 +252,14 @@ class TestLifespanEvents:
         shutdown_complete = asyncio.Event()
         messages: list[dict] = []
 
-        async def receive():
+        async def receive() -> dict[str, str]:
             if not startup_complete.is_set():
                 startup_complete.set()
                 return {"type": "lifespan.startup"}
             await shutdown_complete.wait()
             return {"type": "lifespan.shutdown"}
 
-        async def send(message):
+        async def send(message: dict[str, str]) -> None:
             messages.append(message)
             if message["type"] == "lifespan.startup.complete":
                 # Monitor should now be started
@@ -282,15 +284,14 @@ class TestLifespanEvents:
 
         # Clean up
         lifespan_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await lifespan_task
-        except asyncio.CancelledError:
-            pass
 
     async def test_lifespan_shutdown_stops_monitor(self) -> None:
         """Test that monitor stops during lifespan shutdown."""
+
         @asynccontextmanager
-        async def lifespan(app: FastAPI):
+        async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             yield
 
         app = FastAPI(lifespan=lifespan)
@@ -307,7 +308,7 @@ class TestLifespanEvents:
         phase = {"current": "startup"}
         messages: list[dict] = []
 
-        async def receive():
+        async def receive() -> dict[str, str]:
             if phase["current"] == "startup":
                 phase["current"] = "running"
                 return {"type": "lifespan.startup"}
@@ -319,7 +320,7 @@ class TestLifespanEvents:
                 await asyncio.Event().wait()
                 return {}
 
-        async def send(message):
+        async def send(message: dict[str, str]) -> None:
             messages.append(message)
 
         scope = {"type": "lifespan", "asgi": {"version": "3.0"}}
@@ -474,11 +475,13 @@ class TestWebSocketPassthrough:
         )
         app.add_middleware(LoopGuardMiddleware, config=config)
 
-        with TestClient(app) as client:
-            with client.websocket_connect("/ws") as ws:
-                ws.send_text("hello")
-                message = ws.receive_text()
-                assert message == "echo: hello"
+        with (
+            TestClient(app) as client,
+            client.websocket_connect("/ws") as ws,
+        ):
+            ws.send_text("hello")
+            message = ws.receive_text()
+            assert message == "echo: hello"
 
         # Registry should be empty - WebSocket doesn't register
         assert get_registry().active_count() == 0

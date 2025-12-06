@@ -281,7 +281,7 @@ class TestAdaptiveThreshold:
         )
 
         # Add fewer samples than min_samples
-        for i in range(50):
+        for _ in range(50):
             adaptive.add_sample(5.0)
 
         result = adaptive.recalculate()
@@ -317,7 +317,7 @@ class TestAdaptiveThreshold:
         )
 
         # Add low values that would produce threshold < min
-        for i in range(100):
+        for _ in range(100):
             adaptive.add_sample(1.0)
 
         result = adaptive.recalculate()

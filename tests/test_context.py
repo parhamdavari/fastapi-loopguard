@@ -279,9 +279,7 @@ class TestRequestRegistry:
 
         # Register 3
         for i in range(3):
-            ctx = RequestContext(
-                request_id=f"req-{i}", path=f"/path/{i}", method="GET"
-            )
+            ctx = RequestContext(request_id=f"req-{i}", path=f"/path/{i}", method="GET")
             registry.register(ctx)
         assert registry.active_count() == 3
 
@@ -291,9 +289,7 @@ class TestRequestRegistry:
 
         # Register 2 more
         for i in range(3, 5):
-            ctx = RequestContext(
-                request_id=f"req-{i}", path=f"/path/{i}", method="GET"
-            )
+            ctx = RequestContext(request_id=f"req-{i}", path=f"/path/{i}", method="GET")
             registry.register(ctx)
         assert registry.active_count() == 4
 
@@ -301,9 +297,7 @@ class TestRequestRegistry:
         """Test clear removes all contexts."""
         registry = RequestRegistry()
         for i in range(5):
-            ctx = RequestContext(
-                request_id=f"req-{i}", path=f"/path/{i}", method="GET"
-            )
+            ctx = RequestContext(request_id=f"req-{i}", path=f"/path/{i}", method="GET")
             registry.register(ctx)
 
         registry.clear()

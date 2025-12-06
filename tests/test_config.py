@@ -105,7 +105,9 @@ class TestLoopGuardConfig:
 
     def test_invalid_adaptive_window_size(self) -> None:
         """Test that invalid adaptive_window_size raises ValueError."""
-        with pytest.raises(ValueError, match="adaptive_window_size must be at least 100"):
+        with pytest.raises(
+            ValueError, match="adaptive_window_size must be at least 100"
+        ):
             LoopGuardConfig(adaptive_window_size=50)
 
     def test_invalid_adaptive_percentile_low(self) -> None:
@@ -120,10 +122,14 @@ class TestLoopGuardConfig:
 
     def test_invalid_adaptive_min_samples(self) -> None:
         """Test that invalid adaptive_min_samples raises ValueError."""
-        with pytest.raises(ValueError, match="adaptive_min_samples must be at least 10"):
+        with pytest.raises(
+            ValueError, match="adaptive_min_samples must be at least 10"
+        ):
             LoopGuardConfig(adaptive_min_samples=5)
 
     def test_invalid_adaptive_update_interval(self) -> None:
         """Test that invalid adaptive_update_interval_ms raises ValueError."""
-        with pytest.raises(ValueError, match="adaptive_update_interval_ms must be positive"):
+        with pytest.raises(
+            ValueError, match="adaptive_update_interval_ms must be positive"
+        ):
             LoopGuardConfig(adaptive_update_interval_ms=0)
