@@ -1,0 +1,125 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fastapi-loopguard"
+version = "0.3.0"
+description = "Detect event-loop blocking in FastAPI/Starlette with per-request attribution"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+    { name = "Parham" }
+]
+keywords = [
+    "fastapi",
+    "starlette",
+    "asyncio",
+    "middleware",
+    "monitoring",
+    "performance",
+    "blocking",
+    "event-loop",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
+]
+dependencies = [
+    "starlette>=0.37.0,<1.0",
+]
+
+[project.optional-dependencies]
+prometheus = ["prometheus-client>=0.19.0"]
+structlog = ["structlog>=24.1.0"]
+all = [
+    "prometheus-client>=0.19.0",
+    "structlog>=24.1.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "fastapi>=0.110.0",
+    "mypy>=1.8.0",
+    "ruff>=0.3.0",
+    "coverage>=7.4.0",
+]
+stress = [
+    "locust>=2.20.0",
+    "uvicorn>=0.27.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/parham/fastapi-loopguard"
+Documentation = "https://github.com/parham/fastapi-loopguard#readme"
+Repository = "https://github.com/parham/fastapi-loopguard"
+Issues = "https://github.com/parham/fastapi-loopguard/issues"
+
+[project.entry-points.pytest11]
+loopguard = "fastapi_loopguard.pytest_plugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fastapi_loopguard"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.claude",
+    "/stress_results*.csv",
+    "/.coverage",
+    "/.pytest_cache",
+    "/.mypy_cache",
+    "/.ruff_cache",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "prometheus_client.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "locust.*"
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "ANN"]
+ignore = ["ANN401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.coverage.run]
+source = ["src/fastapi_loopguard"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
