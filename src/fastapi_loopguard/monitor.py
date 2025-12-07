@@ -245,53 +245,58 @@ class SentinelMonitor:
         adapt_interval_sec = self._config.adaptive_update_interval_ms / 1000.0
 
         while self._running:
-            start = loop.time()
-            await asyncio.sleep(interval_sec)
-            elapsed = loop.time() - start
+            try:
+                start = loop.time()
+                await asyncio.sleep(interval_sec)
+                elapsed = loop.time() - start
 
-            lag_ms = (elapsed - interval_sec) * 1000.0
+                lag_ms = (elapsed - interval_sec) * 1000.0
 
-            # Adaptive threshold processing
-            if self._adaptive:
-                self._adaptive.add_sample(lag_ms)
-                now = loop.time()
-                if now - self._last_adapt_time >= adapt_interval_sec:
-                    old_threshold = self._threshold_ms
-                    new_threshold = self._adaptive.recalculate()
-                    if new_threshold != old_threshold:
-                        self._threshold_ms = new_threshold
-                        logger.debug(
-                            "Adaptive threshold updated: %.2fms -> %.2fms",
-                            old_threshold,
-                            new_threshold,
-                        )
-                    self._last_adapt_time = now
+                # Adaptive threshold processing
+                if self._adaptive:
+                    self._adaptive.add_sample(lag_ms)
+                    now = loop.time()
+                    if now - self._last_adapt_time >= adapt_interval_sec:
+                        old_threshold = self._threshold_ms
+                        new_threshold = self._adaptive.recalculate()
+                        if new_threshold != old_threshold:
+                            self._threshold_ms = new_threshold
+                            logger.debug(
+                                "Adaptive threshold updated: %.2fms -> %.2fms",
+                                old_threshold,
+                                new_threshold,
+                            )
+                        self._last_adapt_time = now
 
-            triggered = False
-            if lag_ms > self._threshold_ms:
-                self._handle_blocking(lag_ms)
-                triggered = True
+                triggered = False
+                if lag_ms > self._threshold_ms:
+                    self._handle_blocking(lag_ms)
+                    triggered = True
 
-            # Cumulative blocking detection
-            if self._config.cumulative_blocking_enabled:
-                now = loop.time()
-                self._lag_history.append((now, lag_ms))
+                # Cumulative blocking detection
+                if self._config.cumulative_blocking_enabled:
+                    now = loop.time()
+                    self._lag_history.append((now, lag_ms))
 
-                # Prune old samples
-                window_start = now - (self._config.cumulative_window_ms / 1000.0)
-                while self._lag_history and self._lag_history[0][0] < window_start:
-                    self._lag_history.popleft()
+                    # Prune old samples
+                    window_start = now - (self._config.cumulative_window_ms / 1000.0)
+                    while self._lag_history and self._lag_history[0][0] < window_start:
+                        self._lag_history.popleft()
 
-                # Calculate total lag in window
-                cumulative_lag = sum(lag for _, lag in self._lag_history)
+                    # Calculate total lag in window
+                    cumulative_lag = sum(lag for _, lag in self._lag_history)
 
-                if (
-                    cumulative_lag > self._config.cumulative_blocking_threshold_ms
-                    and not triggered
-                ):
-                    self._handle_blocking(cumulative_lag, is_cumulative=True)
-                    # Clear history to avoid repeated triggering for the same window
-                    self._lag_history.clear()
+                    if (
+                        cumulative_lag > self._config.cumulative_blocking_threshold_ms
+                        and not triggered
+                    ):
+                        self._handle_blocking(cumulative_lag, is_cumulative=True)
+                        # Clear history to avoid repeated triggering for the same window
+                        self._lag_history.clear()
+            except Exception:
+                logger.exception("Error in LoopGuard monitor loop")
+                # Wait a bit before retrying to avoid tight loop on persistent error
+                await asyncio.sleep(1.0)
 
     def _handle_blocking(self, lag_ms: float, is_cumulative: bool = False) -> None:
         """Handle a detected blocking event.
