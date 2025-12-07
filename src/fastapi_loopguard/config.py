@@ -41,6 +41,11 @@ class LoopGuardConfig:
     adaptive_min_samples: int = 100
     adaptive_update_interval_ms: float = 1000.0
 
+    # Cumulative blocking detection
+    cumulative_blocking_enabled: bool = False
+    cumulative_blocking_threshold_ms: float = 200.0
+    cumulative_window_ms: float = 1000.0
+
     # Internal: paths to exclude from monitoring (e.g., health checks)
     exclude_paths: frozenset[str] = field(
         default_factory=lambda: frozenset({"/health", "/healthz", "/ready", "/metrics"})
@@ -65,3 +70,8 @@ class LoopGuardConfig:
             raise ValueError("adaptive_min_samples must be at least 10")
         if self.adaptive_update_interval_ms <= 0:
             raise ValueError("adaptive_update_interval_ms must be positive")
+        # Cumulative blocking validation
+        if self.cumulative_blocking_threshold_ms <= 0:
+            raise ValueError("cumulative_blocking_threshold_ms must be positive")
+        if self.cumulative_window_ms <= 0:
+            raise ValueError("cumulative_window_ms must be positive")

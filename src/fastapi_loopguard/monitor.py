@@ -128,6 +128,7 @@ class SentinelMonitor:
         "_calibrated",
         "_adaptive",
         "_last_adapt_time",
+        "_lag_history",
     )
 
     def __init__(
@@ -163,6 +164,7 @@ class SentinelMonitor:
         else:
             self._adaptive = None
         self._last_adapt_time: float = 0.0
+        self._lag_history: deque[tuple[float, float]] = deque()
 
     @property
     def is_running(self) -> bool:
@@ -265,10 +267,33 @@ class SentinelMonitor:
                         )
                     self._last_adapt_time = now
 
+            triggered = False
             if lag_ms > self._threshold_ms:
                 self._handle_blocking(lag_ms)
+                triggered = True
 
-    def _handle_blocking(self, lag_ms: float) -> None:
+            # Cumulative blocking detection
+            if self._config.cumulative_blocking_enabled:
+                now = loop.time()
+                self._lag_history.append((now, lag_ms))
+
+                # Prune old samples
+                window_start = now - (self._config.cumulative_window_ms / 1000.0)
+                while self._lag_history and self._lag_history[0][0] < window_start:
+                    self._lag_history.popleft()
+
+                # Calculate total lag in window
+                cumulative_lag = sum(lag for _, lag in self._lag_history)
+
+                if (
+                    cumulative_lag > self._config.cumulative_blocking_threshold_ms
+                    and not triggered
+                ):
+                    self._handle_blocking(cumulative_lag, is_cumulative=True)
+                    # Clear history to avoid repeated triggering for the same window
+                    self._lag_history.clear()
+
+    def _handle_blocking(self, lag_ms: float, is_cumulative: bool = False) -> None:
         """Handle a detected blocking event.
 
         Attributes blocking to ALL currently active requests, since we
@@ -277,11 +302,16 @@ class SentinelMonitor:
         # Get all active request contexts
         active_contexts = list(get_active_requests())
 
+        msg_type = (
+            "Cumulative event loop blocking" if is_cumulative else "Event loop blocked"
+        )
+
         if not active_contexts:
             # No active requests - log as background blocking
             if self._config.log_blocking_events:
                 logger.warning(
-                    "Event loop blocked for %.2fms (no active request)",
+                    "%s for %.2fms (no active request)",
+                    msg_type,
                     lag_ms,
                 )
             if self._on_blocking:
@@ -294,7 +324,8 @@ class SentinelMonitor:
 
             if self._config.log_blocking_events:
                 logger.warning(
-                    "Event loop blocked for %.2fms during %s %s (request_id=%s)",
+                    "%s for %.2fms during %s %s (request_id=%s)",
+                    msg_type,
                     lag_ms,
                     ctx.method,
                     ctx.path,
