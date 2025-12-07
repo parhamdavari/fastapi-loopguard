@@ -69,7 +69,9 @@ class LoopGuardConfig:
         if self.adaptive_min_samples < 10:
             raise ValueError("adaptive_min_samples must be at least 10")
         if self.adaptive_min_samples > self.adaptive_window_size:
-            raise ValueError("adaptive_min_samples cannot be greater than adaptive_window_size")
+            raise ValueError(
+                "adaptive_min_samples cannot be greater than adaptive_window_size"
+            )
         if self.adaptive_update_interval_ms <= 0:
             raise ValueError("adaptive_update_interval_ms must be positive")
         # Cumulative blocking validation
