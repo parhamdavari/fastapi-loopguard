@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fastapi-loopguard"
-version = "0.3.0"
+version = "0.3.1"
 description = "Detect event-loop blocking in FastAPI/Starlette with per-request attribution"
 readme = "README.md"
 license = "MIT"
@@ -61,10 +61,10 @@ stress = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/parham/fastapi-loopguard"
-Documentation = "https://github.com/parham/fastapi-loopguard#readme"
-Repository = "https://github.com/parham/fastapi-loopguard"
-Issues = "https://github.com/parham/fastapi-loopguard/issues"
+Homepage = "https://github.com/parhamdavari/fastapi-loopguard"
+Documentation = "https://github.com/parhamdavari/fastapi-loopguard#readme"
+Repository = "https://github.com/parhamdavari/fastapi-loopguard"
+Issues = "https://github.com/parhamdavari/fastapi-loopguard/issues"
 
 [project.entry-points.pytest11]
 loopguard = "fastapi_loopguard.pytest_plugin"
