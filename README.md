@@ -62,13 +62,11 @@ app.add_middleware(LoopGuardMiddleware, config=config)
 
 **Dev mode** adds headers to every response:
 
-```
-X-Request-Id: abc-123
-X-Blocking-Count: 1
-X-Blocking-Duration-Ms: 147
-```
+![Event Loop Blocked screenshot](assets/error-page-screenshot-endpoint.png)
 
 **Log mode** writes structured logs with request attribution.
+
+![Event Loop Blocked screenshot](assets/error-page-screenshot-console.png)
 
 ---
 
