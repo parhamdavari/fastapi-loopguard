@@ -112,6 +112,7 @@ class TestLoopGuardMiddleware:
         """Test that blocking endpoints are detected."""
         config = LoopGuardConfig(
             dev_mode=True,
+            enforcement_mode="log",  # Use log mode to test header detection
             monitor_interval_ms=2.0,  # Fast monitoring
             calibration_iterations=10,
             threshold_multiplier=2.0,

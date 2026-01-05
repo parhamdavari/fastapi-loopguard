@@ -34,6 +34,10 @@ class LoopGuardConfig:
     log_blocking_events: bool = True
     prometheus_enabled: bool = False
 
+    # Enforcement mode: how aggressively to respond to blocking
+    # "log" = just log (production), "warn" = loud warnings, "strict" = 503 errors
+    enforcement_mode: str = "warn"
+
     # Adaptive threshold settings
     adaptive_threshold: bool = False
     adaptive_window_size: int = 1000
@@ -85,4 +89,11 @@ class LoopGuardConfig:
         ):
             raise ValueError(
                 "cumulative_window_ms cannot be less than monitor_interval_ms"
+            )
+        # Enforcement mode validation
+        valid_enforcement_modes = {"log", "warn", "strict"}
+        if self.enforcement_mode not in valid_enforcement_modes:
+            raise ValueError(
+                f"enforcement_mode must be one of {valid_enforcement_modes}, "
+                f"got '{self.enforcement_mode}'"
             )
