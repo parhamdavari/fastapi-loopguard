@@ -66,13 +66,25 @@ async def test_cumulative_blocking_detection() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cumulative_blocking_disabled_by_default() -> None:
-    # Verify it doesn't trigger when disabled
+async def test_cumulative_blocking_enabled_by_default() -> None:
+    # Verify cumulative blocking is enabled by default
     config = LoopGuardConfig(
         enabled=True,
         monitor_interval_ms=10.0,
         fallback_threshold_ms=50.0,
-        # Default is cumulative_blocking_enabled=False
+    )
+
+    assert config.cumulative_blocking_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_cumulative_blocking_can_be_disabled() -> None:
+    # Verify it doesn't trigger when explicitly disabled
+    config = LoopGuardConfig(
+        enabled=True,
+        monitor_interval_ms=10.0,
+        fallback_threshold_ms=50.0,
+        cumulative_blocking_enabled=False,
     )
 
     assert config.cumulative_blocking_enabled is False

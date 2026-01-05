@@ -80,3 +80,7 @@ Writes structured logs with full request attribution:
 </p>
 
 ---
+
+<p align="center">
+  <a href="docs/CONFIGURATION.md"><strong>Full Configuration Reference</strong></a>
+</p>

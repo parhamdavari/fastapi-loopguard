@@ -46,7 +46,7 @@ class LoopGuardConfig:
     adaptive_update_interval_ms: float = 1000.0
 
     # Cumulative blocking detection
-    cumulative_blocking_enabled: bool = False
+    cumulative_blocking_enabled: bool = True
     cumulative_blocking_threshold_ms: float = 200.0
     cumulative_window_ms: float = 1000.0
 
