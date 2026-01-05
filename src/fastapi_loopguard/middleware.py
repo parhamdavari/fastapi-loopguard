@@ -264,10 +264,10 @@ class LoopGuardMiddleware:
     def _log_console_warning(self, ctx: RequestContext) -> None:
         """Print attention-grabbing console warning to stderr."""
         warning = f"""
-{'=' * 72}
-{'!' * 72}
+{"=" * 72}
+{"!" * 72}
   LOOPGUARD: Event Loop Blocked!
-{'!' * 72}
+{"!" * 72}
 
   Request: {ctx.method} {ctx.path}
   Request ID: {ctx.request_id}
@@ -283,7 +283,7 @@ class LoopGuardMiddleware:
     subprocess.run(...) -> await asyncio.create_subprocess_exec(...)
 
   Docs: https://fastapi.tiangolo.com/async/
-{'=' * 72}
+{"=" * 72}
 """
         print(warning, file=sys.stderr)
 
