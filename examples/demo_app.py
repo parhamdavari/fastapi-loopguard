@@ -9,9 +9,10 @@ from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware
 
 app = FastAPI(title="LoopGuard Demo")
 
-# Configure with dev_mode for headers and logging enabled
+# dev_mode adds diagnostic headers; strict mode fails blocking requests with 503
 config = LoopGuardConfig(
     dev_mode=True,
+    enforcement_mode="strict",
     log_blocking_events=True,
     fallback_threshold_ms=30.0,  # Low threshold for demo
 )
@@ -28,7 +29,7 @@ async def root():
 async def get_users():
     """Endpoint that blocks the event loop - will trigger warning."""
     # This blocks the event loop! BAD!
-    time.sleep(0.15)  # 150ms blocking
+    time.sleep(3)  # 3s blocking - long enough to feel every request freeze
     # Small yield to let monitor detect the blocking while context is still active
     await asyncio.sleep(0.02)
     return {"users": ["alice", "bob", "charlie"]}
@@ -50,7 +51,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("\nEndpoints:")
     print("  GET /           - Non-blocking (no warning)")
-    print("  GET /api/users  - BLOCKING (will trigger warning)")
+    print("  GET /api/users  - BLOCKING (fails with educational 503)")
     print("  GET /api/items  - Non-blocking async sleep (no warning)")
     print("\nTry: curl http://localhost:8765/api/users")
     print("=" * 60 + "\n")

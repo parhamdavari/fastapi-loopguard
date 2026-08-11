@@ -12,6 +12,10 @@
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
 
+<p align="center">
+  <img src="assets/demo.gif" alt="LoopGuard demo: a fast endpoint passes, a blocking endpoint fails with a 503, and the console banner explains why" width="800" />
+</p>
+
 ---
 
 When something blocks your event loop (via `time.sleep()`, blocking I/O, or CPU work), LoopGuard detects it **and narrows it down to the requests that were in flight when the loop stalled**. The sentinel measures loop lag, so it cannot name the single guilty handler — it reports every request that was active during the stall.
@@ -61,7 +65,7 @@ app.add_middleware(LoopGuardMiddleware, config=config)
 Returns an educational 503 page that explains what went wrong and how to fix it:
 
 <p align="center">
-  <img src="assets/error-page-screenshot.png" alt="Strict mode error page" width="600" />
+  <img src="assets/error-page.gif" alt="Strict mode error page" width="600" />
 </p>
 
 ---
