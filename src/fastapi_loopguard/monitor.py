@@ -189,8 +189,11 @@ class SentinelMonitor:
     async def calibrate(self) -> float:
         """Calibrate the baseline event loop latency.
 
-        Runs a series of sleep calls to measure the typical latency
-        of yielding to the event loop under normal conditions.
+        Runs a series of sleep calls and takes the MINIMUM observed lag as
+        the baseline: it estimates the idle floor and is the sample least
+        affected by concurrent traffic. The resulting threshold may tighten
+        the fallback but never exceed it, so calibration running alongside a
+        blocking app cannot raise the threshold and blind later detection.
 
         Returns:
             The calibrated threshold in milliseconds.
@@ -206,14 +209,16 @@ class SentinelMonitor:
             lag_ms = (elapsed - interval_sec) * 1000.0
             samples.append(lag_ms)
 
-        # Use P75 as baseline to be robust against outliers
-        samples.sort()
-        p75_index = int(len(samples) * 0.75)
-        self._baseline_ms = samples[p75_index]
+        # Idle floor: the minimum lag is the least contaminated sample
+        self._baseline_ms = min(samples)
 
-        # Calculate threshold
-        self._threshold_ms = max(
-            self._baseline_ms * self._config.threshold_multiplier,
+        # Floor at the sampling interval (lag below it cannot be resolved),
+        # ceiling at the fallback (calibration may only ever lower it)
+        self._threshold_ms = min(
+            max(
+                self._baseline_ms * self._config.threshold_multiplier,
+                self._config.monitor_interval_ms,
+            ),
             self._config.fallback_threshold_ms,
         )
         self._calibrated = True
