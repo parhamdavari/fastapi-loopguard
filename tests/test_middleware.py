@@ -554,6 +554,39 @@ class TestSendWrapperConformance:
         )
         assert "http.response.trailers" in [m["type"] for m in sent]
 
+    _START_WITH_TRAILERS: list[Message] = [
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [(b"trailer", b"x-checksum")],
+            "trailers": True,
+        },
+        {"type": "http.response.body", "body": b"data", "more_body": False},
+    ]
+
+    def _start_message(self, sent: list[Message]) -> Message:
+        return next(m for m in sent if m["type"] == "http.response.start")
+
+    async def test_warn_mode_preserves_start_message_keys(self) -> None:
+        """Rebuilding http.response.start must not drop keys like 'trailers'."""
+        config = LoopGuardConfig(enforcement_mode="warn", log_blocking_events=False)
+        sent = await self._drive(config, self._START_WITH_TRAILERS)
+        assert self._start_message(sent).get("trailers") is True
+
+    async def test_headers_mode_preserves_start_message_keys(self) -> None:
+        """The dev-mode headers wrapper must not drop keys like 'trailers'."""
+        config = LoopGuardConfig(
+            enforcement_mode="log", dev_mode=True, log_blocking_events=False
+        )
+        sent = await self._drive(config, self._START_WITH_TRAILERS)
+        assert self._start_message(sent).get("trailers") is True
+
+    async def test_strict_mode_preserves_start_message_keys(self) -> None:
+        """The strict wrapper (no blocking) must not drop keys like 'trailers'."""
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent = await self._drive(config, self._START_WITH_TRAILERS)
+        assert self._start_message(sent).get("trailers") is True
+
 
 class TestMiddlewareErrorHandling:
     """Tests for error handling in middleware."""

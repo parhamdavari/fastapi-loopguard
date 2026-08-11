@@ -234,12 +234,8 @@ class LoopGuardMiddleware:
                     ]
                 )
 
-                # Create new message with updated headers
-                message = {
-                    "type": message["type"],
-                    "status": message.get("status", 200),
-                    "headers": headers,
-                }
+                # Copy the message so keys like "trailers" are preserved
+                message = {**message, "headers": headers}
 
             await send(message)
 
@@ -568,11 +564,7 @@ await proc.wait()
                         self._log_console_warning(ctx)
                         warning_logged = True
 
-                message = {
-                    "type": message["type"],
-                    "status": message.get("status", 200),
-                    "headers": headers,
-                }
+                message = {**message, "headers": headers}
 
             await send(message)
 
@@ -613,11 +605,7 @@ await proc.wait()
                     ]
                 )
 
-                message = {
-                    "type": message["type"],
-                    "status": message.get("status", 200),
-                    "headers": headers,
-                }
+                message = {**message, "headers": headers}
                 await send(message)
 
             elif blocking_detected:
