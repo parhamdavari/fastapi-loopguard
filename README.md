@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Catch event-loop blocking in FastAPI with per-request attribution.</strong>
+  <strong>Catch event-loop blocking in FastAPI and see which requests were in flight.</strong>
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 
 ---
 
-When a request blocks your event loop (via `time.sleep()`, blocking I/O, or CPU work), LoopGuard detects it **and tells you which endpoint caused it**.
+When something blocks your event loop (via `time.sleep()`, blocking I/O, or CPU work), LoopGuard detects it **and narrows it down to the requests that were in flight when the loop stalled**. The sentinel measures loop lag, so it cannot name the single guilty handler — it reports every request that was active during the stall.
 
 ## Install
 
@@ -43,8 +43,11 @@ app.add_middleware(LoopGuardMiddleware)
 ```python
 from fastapi_loopguard import LoopGuardConfig
 
-# Development: strict enforcement (503 on blocking)
+# Development: diagnostic headers on every response
 config = LoopGuardConfig(dev_mode=True)
+
+# Development / CI: fail loudly with an educational 503
+config = LoopGuardConfig(enforcement_mode="strict")
 
 # Production: silent logging
 config = LoopGuardConfig(enforcement_mode="log")
@@ -73,7 +76,7 @@ Adds diagnostic headers to every response for debugging:
 ---
 
 ### Log Mode
-Writes structured logs with full request attribution:
+Writes structured logs listing the requests that were in flight:
 
 <p align="center">
   <img src="assets/error-page-screenshot-console.png" alt="Console output" width="600" />

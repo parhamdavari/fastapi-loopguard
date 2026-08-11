@@ -376,11 +376,11 @@ class TestStrictMode:
         assert response.headers.get("x-loopguard-enforcement") == "strict"
 
 
-class TestDevModeEscalation:
-    """Tests for dev_mode auto-escalation to strict mode."""
+class TestDevModeDoesNotEscalate:
+    """dev_mode only controls headers; it must never change the response status."""
 
-    async def test_dev_mode_escalates_warn_to_strict(self) -> None:
-        """Test that dev_mode=True escalates warn mode to strict."""
+    async def test_dev_mode_default_mode_returns_200_on_blocking(self) -> None:
+        """dev_mode with the default (warn) mode passes the response through."""
         app = FastAPI()
 
         @app.get("/blocking")
@@ -390,8 +390,7 @@ class TestDevModeEscalation:
             return {"status": "blocked"}
 
         config = LoopGuardConfig(
-            enforcement_mode="warn",  # Would normally be warn
-            dev_mode=True,  # But dev_mode escalates to strict
+            dev_mode=True,  # Must not escalate the default (warn) to strict
             monitor_interval_ms=2.0,
             fallback_threshold_ms=5.0,
             log_blocking_events=False,
@@ -406,8 +405,55 @@ class TestDevModeEscalation:
             await asyncio.sleep(0.1)
             response = await client.get("/blocking")
 
-        # Should get 503 because dev_mode escalates to strict
-        assert response.status_code == 503
+        # Response passes through with warn-mode diagnostics, no 503
+        assert response.status_code == 200
+        assert response.json() == {"status": "blocked"}
+        assert response.headers.get("x-blocking-detected") == "true"
+        assert response.headers.get("x-loopguard-warning") == "blocking-detected"
+
+    async def test_innocent_concurrent_requests_not_failed(self) -> None:
+        """Requests in flight during another request's blocking must not 503.
+
+        Blocking is attributed to ALL in-flight requests (the sentinel cannot
+        know the culprit), so a 503 on blocking_count > 0 punishes bystanders.
+        Only explicit strict mode may fail responses.
+        """
+        app = FastAPI()
+
+        @app.get("/block")
+        async def block_endpoint() -> dict[str, str]:
+            time.sleep(0.1)  # Sync block; returns without yielding after
+            return {"status": "blocked"}
+
+        @app.get("/fast")
+        async def fast_endpoint() -> dict[str, str]:
+            await asyncio.sleep(0.2)  # In flight while /block freezes the loop
+            return {"status": "fast"}
+
+        config = LoopGuardConfig(
+            dev_mode=True,
+            monitor_interval_ms=2.0,
+            fallback_threshold_ms=5.0,
+            log_blocking_events=False,
+        )
+        app.add_middleware(LoopGuardMiddleware, config=config)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+
+            async def blocker() -> int:
+                await asyncio.sleep(0.05)  # Let the fast requests register
+                return (await client.get("/block")).status_code
+
+            async def fast() -> int:
+                return (await client.get("/fast")).status_code
+
+            statuses = await asyncio.gather(*(fast() for _ in range(5)), blocker())
+
+        # Nobody gets a 503 outside explicit strict mode
+        assert statuses == [200] * 6
 
     async def test_dev_mode_respects_explicit_log_mode(self) -> None:
         """Test that dev_mode=True respects explicit log mode (no escalation)."""
@@ -442,70 +488,19 @@ class TestDevModeEscalation:
         # But should still have dev headers
         assert "x-request-id" in response.headers
 
-    async def test_dev_mode_escalates_default_to_strict(self) -> None:
-        """Test that dev_mode=True escalates default (warn) to strict."""
-        app = FastAPI()
-
-        @app.get("/blocking")
-        async def blocking_endpoint() -> dict[str, str]:
-            time.sleep(0.1)
-            await asyncio.sleep(0.02)
-            return {"status": "blocked"}
-
-        # Don't specify enforcement_mode - use default (warn)
-        config = LoopGuardConfig(
-            dev_mode=True,
-            monitor_interval_ms=2.0,
-            fallback_threshold_ms=5.0,
-            log_blocking_events=False,
-        )
-        app.add_middleware(LoopGuardMiddleware, config=config)
-
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test",
-        ) as client:
-            await client.get("/blocking")
-            await asyncio.sleep(0.1)
-            response = await client.get("/blocking")
-
-        # Should get 503 because dev_mode escalates default (warn) to strict
-        assert response.status_code == 503
-
 
 class TestEffectiveEnforcementMode:
     """Tests for _get_effective_enforcement_mode method."""
 
-    def test_effective_mode_without_dev_mode(self) -> None:
-        """Test effective mode returns configured mode when dev_mode=False."""
+    def test_effective_mode_is_configured_mode(self) -> None:
+        """Effective mode is always the configured mode, regardless of dev_mode."""
         app = FastAPI()
 
         for mode in ["log", "warn", "strict"]:
-            config = LoopGuardConfig(
-                enforcement_mode=mode,
-                dev_mode=False,
-            )
-            middleware = LoopGuardMiddleware(app, config=config)
-            assert middleware._get_effective_enforcement_mode() == mode
-
-    def test_effective_mode_with_dev_mode_escalates(self) -> None:
-        """Test effective mode escalates to strict when dev_mode=True."""
-        app = FastAPI()
-
-        # warn -> strict
-        config = LoopGuardConfig(enforcement_mode="warn", dev_mode=True)
-        middleware = LoopGuardMiddleware(app, config=config)
-        assert middleware._get_effective_enforcement_mode() == "strict"
-
-        # strict -> strict (no change)
-        config = LoopGuardConfig(enforcement_mode="strict", dev_mode=True)
-        middleware = LoopGuardMiddleware(app, config=config)
-        assert middleware._get_effective_enforcement_mode() == "strict"
-
-    def test_effective_mode_log_not_escalated(self) -> None:
-        """Test that log mode is not escalated even with dev_mode=True."""
-        app = FastAPI()
-
-        config = LoopGuardConfig(enforcement_mode="log", dev_mode=True)
-        middleware = LoopGuardMiddleware(app, config=config)
-        assert middleware._get_effective_enforcement_mode() == "log"
+            for dev_mode in [False, True]:
+                config = LoopGuardConfig(
+                    enforcement_mode=mode,
+                    dev_mode=dev_mode,
+                )
+                middleware = LoopGuardMiddleware(app, config=config)
+                assert middleware._get_effective_enforcement_mode() == mode

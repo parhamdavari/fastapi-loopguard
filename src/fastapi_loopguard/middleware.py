@@ -242,13 +242,13 @@ class LoopGuardMiddleware:
         await self.app(scope, receive, send_wrapper)
 
     def _get_effective_enforcement_mode(self) -> str:
-        """Get the effective enforcement mode, considering dev_mode escalation.
+        """Get the effective enforcement mode.
 
-        When dev_mode=True and enforcement_mode is not explicitly "log",
-        auto-escalate to "strict" for maximum learning impact.
+        dev_mode only controls debug headers and never changes the mode.
+        A 503 requires explicitly opting in with enforcement_mode="strict",
+        because blocking is attributed to ALL in-flight requests and a
+        status change would punish innocent concurrent requests.
         """
-        if self._config.dev_mode and self._config.enforcement_mode != "log":
-            return "strict"
         return self._config.enforcement_mode
 
     def _get_client_accepts_html(self, scope: Scope) -> bool:
@@ -265,12 +265,13 @@ class LoopGuardMiddleware:
   LOOPGUARD: Event Loop Blocked!
 {"!" * 72}
 
-  Request: {ctx.method} {ctx.path}
+  In-flight request: {ctx.method} {ctx.path}
   Request ID: {ctx.request_id}
   Blocked: {ctx.blocking_count} time(s), {ctx.total_blocking_ms:.1f}ms total
 
-  Your async code ran BLOCKING operations.
-  ALL other requests were frozen while waiting.
+  Blocking was detected while this request was in flight. The culprit
+  may be this request or any other concurrent request.
+  ALL requests were frozen while the event loop was blocked.
 
   Common fixes:
     time.sleep(n)       -> await asyncio.sleep(n)
@@ -360,7 +361,8 @@ class LoopGuardMiddleware:
         <div class="error-box">
             <h1>Event Loop Blocked!</h1>
             <p>
-                <strong>Request:</strong> <code>{ctx.method} {ctx.path}</code><br>
+                <strong>In-flight request:</strong>
+                <code>{ctx.method} {ctx.path}</code><br>
                 <strong>Blocked:</strong> {ctx.blocking_count} time(s),
                 totaling <code>{ctx.total_blocking_ms:.1f}ms</code>
             </p>
@@ -368,8 +370,9 @@ class LoopGuardMiddleware:
 
         <h2>What Happened?</h2>
         <p>
-            Your async endpoint executed <strong>synchronous (blocking) code</strong>
-            that froze the event loop. During this time, ALL other requests were
+            While this request was in flight, <strong>synchronous (blocking)
+            code</strong> froze the event loop &mdash; in this handler or in any
+            other concurrent request. During this time, ALL requests were
             waiting and couldn't be processed.
         </p>
 
@@ -435,7 +438,9 @@ await proc.wait()
         return json.dumps(
             {
                 "error": "event_loop_blocked",
-                "message": "Blocking operation detected in async endpoint",
+                "message": (
+                    "Event loop blocking detected while this request was in flight"
+                ),
                 "request": {
                     "id": ctx.request_id,
                     "method": ctx.method,

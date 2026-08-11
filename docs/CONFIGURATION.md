@@ -10,7 +10,7 @@ from fastapi_loopguard import LoopGuardConfig
 config = LoopGuardConfig(
     # Enforcement
     enforcement_mode="warn",      # "log" | "warn" | "strict"
-    dev_mode=False,               # Auto-escalates to strict when True
+    dev_mode=False,               # Adds X-Blocking-* response headers when True
 
     # Detection tuning
     monitor_interval_ms=10.0,     # How often to check (ms)
@@ -39,7 +39,7 @@ config = LoopGuardConfig(
 |--------|------|---------|-------------|
 | `enabled` | bool | `True` | Master switch. Set `False` to disable entirely. |
 | `enforcement_mode` | str | `"warn"` | How to respond: `"log"`, `"warn"`, or `"strict"` |
-| `dev_mode` | bool | `False` | Enables response headers. Auto-escalates to strict mode. |
+| `dev_mode` | bool | `False` | Enables response headers. Never changes the enforcement mode. |
 | `log_blocking_events` | bool | `True` | Log blocking events to console |
 | `exclude_paths` | frozenset | `{"/health", ...}` | Paths to skip monitoring |
 
@@ -98,9 +98,14 @@ When enabled, exposes:
 
 ## Common Configurations
 
-### Development (strict enforcement)
+### Development (diagnostic headers)
 ```python
 config = LoopGuardConfig(dev_mode=True)
+```
+
+### Development / CI (strict enforcement, 503 on blocking)
+```python
+config = LoopGuardConfig(enforcement_mode="strict")
 ```
 
 ### Production (silent monitoring)
