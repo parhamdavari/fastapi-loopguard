@@ -29,7 +29,7 @@ async def root():
 async def get_users():
     """Endpoint that blocks the event loop - will trigger warning."""
     # This blocks the event loop! BAD!
-    time.sleep(0.15)  # 150ms blocking
+    time.sleep(3)  # 3s blocking - long enough to feel every request freeze
     # Small yield to let monitor detect the blocking while context is still active
     await asyncio.sleep(0.02)
     return {"users": ["alice", "bob", "charlie"]}
