@@ -276,7 +276,10 @@ class SentinelMonitor:
                 # Cumulative blocking detection
                 if self._config.cumulative_blocking_enabled:
                     now = loop.time()
-                    self._lag_history.append((now, lag_ms))
+                    # A sample consumed by the single-shot detection above is
+                    # not re-counted toward the cumulative window
+                    if not triggered:
+                        self._lag_history.append((now, lag_ms))
 
                     # Prune old samples
                     window_start = now - (self._config.cumulative_window_ms / 1000.0)
@@ -325,7 +328,7 @@ class SentinelMonitor:
 
         # Attribute to all active requests
         for ctx in active_contexts:
-            ctx.record_blocking(lag_ms)
+            ctx.record_blocking(lag_ms, cumulative=is_cumulative)
 
             if self._config.log_blocking_events:
                 logger.warning(
