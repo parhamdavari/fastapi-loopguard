@@ -259,7 +259,12 @@ class SentinelMonitor:
 
                 # Adaptive threshold processing
                 if self._adaptive:
-                    self._adaptive.add_sample(lag_ms)
+                    # Censor the window: only sub-threshold samples inform
+                    # the baseline. Admitting detected blocking makes the
+                    # threshold chase the blocking upward until detection
+                    # stops ("the worse the app gets, the less it reports").
+                    if lag_ms < self._threshold_ms:
+                        self._adaptive.add_sample(lag_ms)
                     now = loop.time()
                     if now - self._last_adapt_time >= adapt_interval_sec:
                         old_threshold = self._threshold_ms

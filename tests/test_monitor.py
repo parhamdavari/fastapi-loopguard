@@ -383,6 +383,44 @@ class TestSentinelMonitorAdaptive:
         assert monitor._adaptive is not None
         assert monitor._adaptive.sample_count > 0
 
+    async def test_adaptive_threshold_not_fed_by_detected_blocking(self) -> None:
+        """Sustained blocking must not raise the adaptive threshold.
+
+        Detected-blocking samples fed the window, so under sustained blocking
+        the threshold chased the blocking upward and detections stopped.
+        """
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=1000,  # Never completes during this test
+            threshold_multiplier=3.0,
+            fallback_threshold_ms=20.0,
+            adaptive_threshold=True,
+            adaptive_window_size=100,
+            adaptive_min_samples=10,
+            adaptive_update_interval_ms=50.0,
+            cumulative_blocking_enabled=False,
+            log_blocking_events=False,
+        )
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        monitor = SentinelMonitor(config, on_blocking=on_blocking)
+        await monitor.start_with_background_calibration()
+        await asyncio.sleep(0.05)  # Let the monitor loop start ticking
+
+        for _ in range(30):
+            time.sleep(0.03)  # 30ms block, above the 20ms fallback threshold
+            await asyncio.sleep(0.002)
+
+        await monitor.stop()
+
+        # The threshold must not have chased the blocking upward
+        assert monitor.threshold_ms == config.fallback_threshold_ms
+        # Detection must keep firing for the whole run, not fade out
+        assert len(events) >= 25
+
 
 class TestMonitorIdempotency:
     """Tests for idempotent start/stop operations."""
