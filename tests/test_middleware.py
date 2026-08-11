@@ -50,6 +50,15 @@ def clear_registry() -> None:
     get_registry().clear()
 
 
+def _live_loopguard_tasks() -> list[str]:
+    """Names of loopguard tasks still alive on the current loop."""
+    return sorted(
+        task.get_name()
+        for task in asyncio.all_tasks()
+        if task.get_name().startswith("loopguard") and not task.done()
+    )
+
+
 class TestLoopGuardMiddleware:
     """Tests for the middleware."""
 
@@ -335,6 +344,140 @@ class TestLifespanEvents:
         # Monitor should be stopped
         assert not middleware._started
         assert middleware._monitor is None
+
+    async def test_startup_failed_stops_monitor(self) -> None:
+        """lifespan.startup.failed must not leak a running monitor."""
+
+        async def failing_app(scope: Scope, receive: Receive, send: Send) -> None:
+            message = await receive()
+            assert message["type"] == "lifespan.startup"
+            await send({"type": "lifespan.startup.failed", "message": "db down"})
+
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            log_blocking_events=False,
+        )
+        middleware = LoopGuardMiddleware(failing_app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "lifespan.startup"}
+
+        async def send(message: Message) -> None:
+            pass
+
+        await middleware({"type": "lifespan"}, receive, send)
+
+        assert not middleware._started
+        assert middleware._monitor is None
+        assert _live_loopguard_tasks() == []
+
+    async def test_shutdown_failed_stops_monitor(self) -> None:
+        """lifespan.shutdown.failed must stop the monitor like shutdown.complete."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            await receive()  # lifespan.startup
+            await send({"type": "lifespan.startup.complete"})
+            await receive()  # lifespan.shutdown
+            await send({"type": "lifespan.shutdown.failed", "message": "cleanup"})
+
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            log_blocking_events=False,
+        )
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        messages = [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}]
+
+        async def receive() -> Message:
+            return messages.pop(0)
+
+        async def send(message: Message) -> None:
+            pass
+
+        await middleware({"type": "lifespan"}, receive, send)
+
+        assert not middleware._started
+        assert middleware._monitor is None
+        assert _live_loopguard_tasks() == []
+
+    async def test_lazy_monitor_stops_when_idle(self) -> None:
+        """Without lifespan, the lazily started monitor must not leak tasks."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            log_blocking_events=False,
+        )
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            pass
+
+        scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+        await middleware(scope, receive, send)
+
+        # Request finished, no requests in flight: nothing may keep running
+        assert not middleware._started
+        assert _live_loopguard_tasks() == []
+
+    async def test_lifespan_monitor_persists_across_requests(self) -> None:
+        """A lifespan-managed monitor must NOT stop between requests."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] == "lifespan":
+                await receive()  # lifespan.startup
+                await send({"type": "lifespan.startup.complete"})
+                await asyncio.Event().wait()  # stay in lifespan until cancelled
+            else:
+                await send(
+                    {"type": "http.response.start", "status": 200, "headers": []}
+                )
+                await send({"type": "http.response.body", "body": b"ok"})
+
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            log_blocking_events=False,
+        )
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def lifespan_receive() -> Message:
+            return {"type": "lifespan.startup"}
+
+        async def send(message: Message) -> None:
+            pass
+
+        lifespan_task = asyncio.create_task(
+            middleware({"type": "lifespan"}, lifespan_receive, send)
+        )
+        await asyncio.sleep(0.05)
+        assert middleware._started
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+        try:
+            await middleware(scope, receive, send)
+
+            # Lifespan-managed monitor survives the request completing
+            assert middleware._started
+            assert "loopguard-monitor" in _live_loopguard_tasks()
+        finally:
+            lifespan_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await lifespan_task
+            if middleware._monitor:
+                await middleware._monitor.stop()
 
     async def test_middleware_without_lifespan_lazy_start(self) -> None:
         """Test that middleware starts lazily without lifespan events."""

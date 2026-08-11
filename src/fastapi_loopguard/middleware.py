@@ -6,6 +6,7 @@ with BaseHTTPMiddleware (deprecated, breaks contextvars, memory leaks).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import uuid
@@ -13,7 +14,12 @@ from typing import TYPE_CHECKING
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from .context import RequestContext, register_request, unregister_request
+from .context import (
+    RequestContext,
+    get_registry,
+    register_request,
+    unregister_request,
+)
 from .monitor import SentinelMonitor
 
 if TYPE_CHECKING:
@@ -44,7 +50,7 @@ class LoopGuardMiddleware:
     - Send wrapper for header injection
     """
 
-    __slots__ = ("app", "_config", "_monitor", "_started")
+    __slots__ = ("app", "_config", "_monitor", "_started", "_lazy_started")
 
     def __init__(
         self,
@@ -65,6 +71,7 @@ class LoopGuardMiddleware:
         self._config = config or ConfigClass()
         self._monitor: SentinelMonitor | None = None
         self._started = False
+        self._lazy_started = False
 
     async def __call__(
         self,
@@ -108,6 +115,7 @@ class LoopGuardMiddleware:
                 # Start monitor before signaling startup complete
                 if self._config.enabled and not self._started:
                     await self._start_monitor()
+                self._lazy_started = False
                 started = True
 
             return message
@@ -115,13 +123,15 @@ class LoopGuardMiddleware:
         async def send_wrapper(message: Message) -> None:
             nonlocal shutdown_complete
 
-            if message["type"] == "lifespan.shutdown.complete":
-                # Stop monitor after app signals shutdown complete
-                if self._monitor:
-                    await self._monitor.stop()
-                    self._monitor = None
-                    self._started = False
-                shutdown_complete = True
+            if message["type"] in (
+                "lifespan.startup.failed",
+                "lifespan.shutdown.complete",
+                "lifespan.shutdown.failed",
+            ):
+                # Stop monitor when the app shuts down OR fails to start;
+                # a failed startup must not leak the monitor tasks
+                await self._stop_monitor()
+                shutdown_complete = message["type"] == "lifespan.shutdown.complete"
 
             await send(message)
 
@@ -136,6 +146,14 @@ class LoopGuardMiddleware:
         # Use background calibration so first request isn't blocked
         await self._monitor.start_with_background_calibration()
         self._started = True
+
+    async def _stop_monitor(self) -> None:
+        """Stop the monitor and reset lifecycle state. Idempotent."""
+        if self._monitor:
+            await self._monitor.stop()
+            self._monitor = None
+        self._started = False
+        self._lazy_started = False
 
     async def _handle_http(
         self,
@@ -162,6 +180,10 @@ class LoopGuardMiddleware:
         # Lazy start for apps without lifespan events
         if not self._started:
             await self._start_monitor()
+            self._lazy_started = True
+            # Yield once so the monitor takes its first tick before dispatch;
+            # otherwise blocking before the app's first await is invisible
+            await asyncio.sleep(0)
 
         # Create and register request context
         request_id = str(uuid.uuid4())[:8]
@@ -196,6 +218,15 @@ class LoopGuardMiddleware:
                 await self.app(scope, receive, send)
         finally:
             unregister_request(request_id)
+            # A lazily started monitor has no lifespan shutdown to stop it:
+            # stop when the last in-flight request finishes, restart on the
+            # next request. Lifespan-managed monitors are left running.
+            if (
+                self._lazy_started
+                and self._started
+                and get_registry().active_count() == 0
+            ):
+                await self._stop_monitor()
 
     async def _handle_with_headers(
         self,
