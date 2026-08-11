@@ -21,6 +21,10 @@ Correctness release. Every fix below changes externally observable behavior.
 - The adaptive threshold no longer chases sustained blocking. ~120 blocks of
   ~70ms used to yield ~9 detections and a final threshold near 380ms;
   detection now keeps firing for the whole run.
+- Adaptive mode no longer discards a calibration-tightened threshold. Its
+  floor used to be pinned at the fallback and its first update fired
+  immediately, snapping a calibrated 10ms threshold back to 50ms on the
+  first tick. The floor now follows the calibrated threshold.
 - Responses using ASGI extension messages no longer hang in strict mode:
   `http.response.pathsend` (Starlette `FileResponse` on Hypercorn/Granian),
   `http.response.trailers`, and unknown message types now pass through.
