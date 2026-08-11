@@ -22,7 +22,7 @@ ruff format --check src/ tests/          # CI verifies formatting; drop --check 
 coverage run -m pytest tests/ && coverage report --fail-under=80   # the CI gate
 
 pip install -e ".[stress]"               # everything under examples/ needs uvicorn + locust
-python examples/demo_app.py              # demo on :8765 — /api/users returns 503 (dev_mode)
+python examples/demo_app.py              # demo on :8765 — /api/users returns 503 (strict mode)
 python examples/stress_app.py            # stress target on :8000
 python examples/run_stress_test.py --skip-locust   # validation suite against a running :8000
 ```
