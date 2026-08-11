@@ -70,6 +70,16 @@ class AdaptiveThreshold:
         """Number of samples currently in the window."""
         return len(self._samples)
 
+    def set_min_threshold(self, min_threshold_ms: float) -> None:
+        """Update the floor, e.g. after calibration tightens the threshold.
+
+        Until enough samples are collected, the current threshold follows the
+        floor so a stale initial value cannot overwrite a calibrated one.
+        """
+        self._min_threshold_ms = min_threshold_ms
+        if len(self._samples) < self._min_samples:
+            self._current_threshold_ms = min_threshold_ms
+
     def add_sample(self, lag_ms: float) -> None:
         """Add a new lag sample to the sliding window.
 
@@ -189,8 +199,11 @@ class SentinelMonitor:
     async def calibrate(self) -> float:
         """Calibrate the baseline event loop latency.
 
-        Runs a series of sleep calls to measure the typical latency
-        of yielding to the event loop under normal conditions.
+        Runs a series of sleep calls and takes the MINIMUM observed lag as
+        the baseline: it estimates the idle floor and is the sample least
+        affected by concurrent traffic. The resulting threshold may tighten
+        the fallback but never exceed it, so calibration running alongside a
+        blocking app cannot raise the threshold and blind later detection.
 
         Returns:
             The calibrated threshold in milliseconds.
@@ -206,17 +219,24 @@ class SentinelMonitor:
             lag_ms = (elapsed - interval_sec) * 1000.0
             samples.append(lag_ms)
 
-        # Use P75 as baseline to be robust against outliers
-        samples.sort()
-        p75_index = int(len(samples) * 0.75)
-        self._baseline_ms = samples[p75_index]
+        # Idle floor: the minimum lag is the least contaminated sample
+        self._baseline_ms = min(samples)
 
-        # Calculate threshold
-        self._threshold_ms = max(
-            self._baseline_ms * self._config.threshold_multiplier,
+        # Floor at the sampling interval (lag below it cannot be resolved),
+        # ceiling at the fallback (calibration may only ever lower it)
+        self._threshold_ms = min(
+            max(
+                self._baseline_ms * self._config.threshold_multiplier,
+                self._config.monitor_interval_ms,
+            ),
             self._config.fallback_threshold_ms,
         )
         self._calibrated = True
+
+        # Adaptive mode floors at the calibrated threshold, not the fallback;
+        # otherwise its first update would undo the calibration
+        if self._adaptive:
+            self._adaptive.set_min_threshold(self._threshold_ms)
 
         logger.info(
             "LoopGuard calibrated: baseline=%.2fms, threshold=%.2fms",
@@ -243,6 +263,9 @@ class SentinelMonitor:
         loop = asyncio.get_running_loop()
         interval_sec = self._config.monitor_interval_ms / 1000.0
         adapt_interval_sec = self._config.adaptive_update_interval_ms / 1000.0
+        # Start the adaptive clock now; a 0.0 start would fire the first
+        # update on the very first iteration
+        self._last_adapt_time = loop.time()
 
         while self._running:
             try:
@@ -254,7 +277,12 @@ class SentinelMonitor:
 
                 # Adaptive threshold processing
                 if self._adaptive:
-                    self._adaptive.add_sample(lag_ms)
+                    # Censor the window: only sub-threshold samples inform
+                    # the baseline. Admitting detected blocking makes the
+                    # threshold chase the blocking upward until detection
+                    # stops ("the worse the app gets, the less it reports").
+                    if lag_ms < self._threshold_ms:
+                        self._adaptive.add_sample(lag_ms)
                     now = loop.time()
                     if now - self._last_adapt_time >= adapt_interval_sec:
                         old_threshold = self._threshold_ms
@@ -276,7 +304,10 @@ class SentinelMonitor:
                 # Cumulative blocking detection
                 if self._config.cumulative_blocking_enabled:
                     now = loop.time()
-                    self._lag_history.append((now, lag_ms))
+                    # A sample consumed by the single-shot detection above is
+                    # not re-counted toward the cumulative window
+                    if not triggered:
+                        self._lag_history.append((now, lag_ms))
 
                     # Prune old samples
                     window_start = now - (self._config.cumulative_window_ms / 1000.0)
@@ -325,7 +356,7 @@ class SentinelMonitor:
 
         # Attribute to all active requests
         for ctx in active_contexts:
-            ctx.record_blocking(lag_ms)
+            ctx.record_blocking(lag_ms, cumulative=is_cumulative)
 
             if self._config.log_blocking_events:
                 logger.warning(

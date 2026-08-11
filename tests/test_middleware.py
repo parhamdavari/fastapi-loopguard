@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import pytest
 from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
+from starlette.types import Message, Receive, Scope, Send
 from starlette.websockets import WebSocket
 
 from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware
@@ -47,6 +48,15 @@ def app() -> FastAPI:
 def clear_registry() -> None:
     """Clear the request registry before each test."""
     get_registry().clear()
+
+
+def _live_loopguard_tasks() -> list[str]:
+    """Names of loopguard tasks still alive on the current loop."""
+    return sorted(
+        task.get_name()
+        for task in asyncio.all_tasks()
+        if task.get_name().startswith("loopguard") and not task.done()
+    )
 
 
 class TestLoopGuardMiddleware:
@@ -335,6 +345,140 @@ class TestLifespanEvents:
         assert not middleware._started
         assert middleware._monitor is None
 
+    async def test_startup_failed_stops_monitor(self) -> None:
+        """lifespan.startup.failed must not leak a running monitor."""
+
+        async def failing_app(scope: Scope, receive: Receive, send: Send) -> None:
+            message = await receive()
+            assert message["type"] == "lifespan.startup"
+            await send({"type": "lifespan.startup.failed", "message": "db down"})
+
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            log_blocking_events=False,
+        )
+        middleware = LoopGuardMiddleware(failing_app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "lifespan.startup"}
+
+        async def send(message: Message) -> None:
+            pass
+
+        await middleware({"type": "lifespan"}, receive, send)
+
+        assert not middleware._started
+        assert middleware._monitor is None
+        assert _live_loopguard_tasks() == []
+
+    async def test_shutdown_failed_stops_monitor(self) -> None:
+        """lifespan.shutdown.failed must stop the monitor like shutdown.complete."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            await receive()  # lifespan.startup
+            await send({"type": "lifespan.startup.complete"})
+            await receive()  # lifespan.shutdown
+            await send({"type": "lifespan.shutdown.failed", "message": "cleanup"})
+
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            log_blocking_events=False,
+        )
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        messages = [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}]
+
+        async def receive() -> Message:
+            return messages.pop(0)
+
+        async def send(message: Message) -> None:
+            pass
+
+        await middleware({"type": "lifespan"}, receive, send)
+
+        assert not middleware._started
+        assert middleware._monitor is None
+        assert _live_loopguard_tasks() == []
+
+    async def test_lazy_monitor_stops_when_idle(self) -> None:
+        """Without lifespan, the lazily started monitor must not leak tasks."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            log_blocking_events=False,
+        )
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            pass
+
+        scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+        await middleware(scope, receive, send)
+
+        # Request finished, no requests in flight: nothing may keep running
+        assert not middleware._started
+        assert _live_loopguard_tasks() == []
+
+    async def test_lifespan_monitor_persists_across_requests(self) -> None:
+        """A lifespan-managed monitor must NOT stop between requests."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] == "lifespan":
+                await receive()  # lifespan.startup
+                await send({"type": "lifespan.startup.complete"})
+                await asyncio.Event().wait()  # stay in lifespan until cancelled
+            else:
+                await send(
+                    {"type": "http.response.start", "status": 200, "headers": []}
+                )
+                await send({"type": "http.response.body", "body": b"ok"})
+
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            log_blocking_events=False,
+        )
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def lifespan_receive() -> Message:
+            return {"type": "lifespan.startup"}
+
+        async def send(message: Message) -> None:
+            pass
+
+        lifespan_task = asyncio.create_task(
+            middleware({"type": "lifespan"}, lifespan_receive, send)
+        )
+        await asyncio.sleep(0.05)
+        assert middleware._started
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+        try:
+            await middleware(scope, receive, send)
+
+            # Lifespan-managed monitor survives the request completing
+            assert middleware._started
+            assert "loopguard-monitor" in _live_loopguard_tasks()
+        finally:
+            lifespan_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await lifespan_task
+            if middleware._monitor:
+                await middleware._monitor.stop()
+
     async def test_middleware_without_lifespan_lazy_start(self) -> None:
         """Test that middleware starts lazily without lifespan events."""
         # App without lifespan
@@ -486,6 +630,105 @@ class TestWebSocketPassthrough:
 
         # Registry should be empty - WebSocket doesn't register
         assert get_registry().active_count() == 0
+
+
+class TestSendWrapperConformance:
+    """Send wrappers must forward unknown ASGI message types and preserve keys."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    async def _drive(
+        self,
+        config: LoopGuardConfig,
+        messages: list[Message],
+    ) -> list[Message]:
+        """Send one request through the middleware, return what the server got."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            for message in messages:
+                await send(message)
+
+        middleware = LoopGuardMiddleware(app, config=config)
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+        await middleware(scope, receive, send)
+        return sent
+
+    async def test_strict_mode_forwards_pathsend(self) -> None:
+        """FileResponse on pathsend-capable servers must not hang in strict mode."""
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent = await self._drive(
+            config,
+            [
+                {"type": "http.response.start", "status": 200, "headers": []},
+                {"type": "http.response.pathsend", "path": "/tmp/file.bin"},
+            ],
+        )
+        assert "http.response.pathsend" in [m["type"] for m in sent]
+
+    async def test_strict_mode_forwards_trailers_messages(self) -> None:
+        """http.response.trailers must pass through the strict-mode wrapper."""
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent = await self._drive(
+            config,
+            [
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [],
+                    "trailers": True,
+                },
+                {"type": "http.response.body", "body": b"data", "more_body": False},
+                {
+                    "type": "http.response.trailers",
+                    "headers": [(b"x-checksum", b"abc")],
+                },
+            ],
+        )
+        assert "http.response.trailers" in [m["type"] for m in sent]
+
+    _START_WITH_TRAILERS: list[Message] = [
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [(b"trailer", b"x-checksum")],
+            "trailers": True,
+        },
+        {"type": "http.response.body", "body": b"data", "more_body": False},
+    ]
+
+    def _start_message(self, sent: list[Message]) -> Message:
+        return next(m for m in sent if m["type"] == "http.response.start")
+
+    async def test_warn_mode_preserves_start_message_keys(self) -> None:
+        """Rebuilding http.response.start must not drop keys like 'trailers'."""
+        config = LoopGuardConfig(enforcement_mode="warn", log_blocking_events=False)
+        sent = await self._drive(config, self._START_WITH_TRAILERS)
+        assert self._start_message(sent).get("trailers") is True
+
+    async def test_headers_mode_preserves_start_message_keys(self) -> None:
+        """The dev-mode headers wrapper must not drop keys like 'trailers'."""
+        config = LoopGuardConfig(
+            enforcement_mode="log", dev_mode=True, log_blocking_events=False
+        )
+        sent = await self._drive(config, self._START_WITH_TRAILERS)
+        assert self._start_message(sent).get("trailers") is True
+
+    async def test_strict_mode_preserves_start_message_keys(self) -> None:
+        """The strict wrapper (no blocking) must not drop keys like 'trailers'."""
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent = await self._drive(config, self._START_WITH_TRAILERS)
+        assert self._start_message(sent).get("trailers") is True
 
 
 class TestMiddlewareErrorHandling:

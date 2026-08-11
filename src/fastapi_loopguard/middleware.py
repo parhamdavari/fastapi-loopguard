@@ -6,6 +6,7 @@ with BaseHTTPMiddleware (deprecated, breaks contextvars, memory leaks).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import uuid
@@ -13,7 +14,12 @@ from typing import TYPE_CHECKING
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from .context import RequestContext, register_request, unregister_request
+from .context import (
+    RequestContext,
+    get_registry,
+    register_request,
+    unregister_request,
+)
 from .monitor import SentinelMonitor
 
 if TYPE_CHECKING:
@@ -44,7 +50,7 @@ class LoopGuardMiddleware:
     - Send wrapper for header injection
     """
 
-    __slots__ = ("app", "_config", "_monitor", "_started")
+    __slots__ = ("app", "_config", "_monitor", "_started", "_lazy_started")
 
     def __init__(
         self,
@@ -65,6 +71,7 @@ class LoopGuardMiddleware:
         self._config = config or ConfigClass()
         self._monitor: SentinelMonitor | None = None
         self._started = False
+        self._lazy_started = False
 
     async def __call__(
         self,
@@ -108,6 +115,7 @@ class LoopGuardMiddleware:
                 # Start monitor before signaling startup complete
                 if self._config.enabled and not self._started:
                     await self._start_monitor()
+                self._lazy_started = False
                 started = True
 
             return message
@@ -115,13 +123,15 @@ class LoopGuardMiddleware:
         async def send_wrapper(message: Message) -> None:
             nonlocal shutdown_complete
 
-            if message["type"] == "lifespan.shutdown.complete":
-                # Stop monitor after app signals shutdown complete
-                if self._monitor:
-                    await self._monitor.stop()
-                    self._monitor = None
-                    self._started = False
-                shutdown_complete = True
+            if message["type"] in (
+                "lifespan.startup.failed",
+                "lifespan.shutdown.complete",
+                "lifespan.shutdown.failed",
+            ):
+                # Stop monitor when the app shuts down OR fails to start;
+                # a failed startup must not leak the monitor tasks
+                await self._stop_monitor()
+                shutdown_complete = message["type"] == "lifespan.shutdown.complete"
 
             await send(message)
 
@@ -136,6 +146,14 @@ class LoopGuardMiddleware:
         # Use background calibration so first request isn't blocked
         await self._monitor.start_with_background_calibration()
         self._started = True
+
+    async def _stop_monitor(self) -> None:
+        """Stop the monitor and reset lifecycle state. Idempotent."""
+        if self._monitor:
+            await self._monitor.stop()
+            self._monitor = None
+        self._started = False
+        self._lazy_started = False
 
     async def _handle_http(
         self,
@@ -162,6 +180,10 @@ class LoopGuardMiddleware:
         # Lazy start for apps without lifespan events
         if not self._started:
             await self._start_monitor()
+            self._lazy_started = True
+            # Yield once so the monitor takes its first tick before dispatch;
+            # otherwise blocking before the app's first await is invisible
+            await asyncio.sleep(0)
 
         # Create and register request context
         request_id = str(uuid.uuid4())[:8]
@@ -196,6 +218,15 @@ class LoopGuardMiddleware:
                 await self.app(scope, receive, send)
         finally:
             unregister_request(request_id)
+            # A lazily started monitor has no lifespan shutdown to stop it:
+            # stop when the last in-flight request finishes, restart on the
+            # next request. Lifespan-managed monitors are left running.
+            if (
+                self._lazy_started
+                and self._started
+                and get_registry().active_count() == 0
+            ):
+                await self._stop_monitor()
 
     async def _handle_with_headers(
         self,
@@ -234,25 +265,21 @@ class LoopGuardMiddleware:
                     ]
                 )
 
-                # Create new message with updated headers
-                message = {
-                    "type": message["type"],
-                    "status": message.get("status", 200),
-                    "headers": headers,
-                }
+                # Copy the message so keys like "trailers" are preserved
+                message = {**message, "headers": headers}
 
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
 
     def _get_effective_enforcement_mode(self) -> str:
-        """Get the effective enforcement mode, considering dev_mode escalation.
+        """Get the effective enforcement mode.
 
-        When dev_mode=True and enforcement_mode is not explicitly "log",
-        auto-escalate to "strict" for maximum learning impact.
+        dev_mode only controls debug headers and never changes the mode.
+        A 503 requires explicitly opting in with enforcement_mode="strict",
+        because blocking is attributed to ALL in-flight requests and a
+        status change would punish innocent concurrent requests.
         """
-        if self._config.dev_mode and self._config.enforcement_mode != "log":
-            return "strict"
         return self._config.enforcement_mode
 
     def _get_client_accepts_html(self, scope: Scope) -> bool:
@@ -269,12 +296,13 @@ class LoopGuardMiddleware:
   LOOPGUARD: Event Loop Blocked!
 {"!" * 72}
 
-  Request: {ctx.method} {ctx.path}
+  In-flight request: {ctx.method} {ctx.path}
   Request ID: {ctx.request_id}
   Blocked: {ctx.blocking_count} time(s), {ctx.total_blocking_ms:.1f}ms total
 
-  Your async code ran BLOCKING operations.
-  ALL other requests were frozen while waiting.
+  Blocking was detected while this request was in flight. The culprit
+  may be this request or any other concurrent request.
+  ALL requests were frozen while the event loop was blocked.
 
   Common fixes:
     time.sleep(n)       -> await asyncio.sleep(n)
@@ -364,7 +392,8 @@ class LoopGuardMiddleware:
         <div class="error-box">
             <h1>Event Loop Blocked!</h1>
             <p>
-                <strong>Request:</strong> <code>{ctx.method} {ctx.path}</code><br>
+                <strong>In-flight request:</strong>
+                <code>{ctx.method} {ctx.path}</code><br>
                 <strong>Blocked:</strong> {ctx.blocking_count} time(s),
                 totaling <code>{ctx.total_blocking_ms:.1f}ms</code>
             </p>
@@ -372,8 +401,9 @@ class LoopGuardMiddleware:
 
         <h2>What Happened?</h2>
         <p>
-            Your async endpoint executed <strong>synchronous (blocking) code</strong>
-            that froze the event loop. During this time, ALL other requests were
+            While this request was in flight, <strong>synchronous (blocking)
+            code</strong> froze the event loop &mdash; in this handler or in any
+            other concurrent request. During this time, ALL requests were
             waiting and couldn't be processed.
         </p>
 
@@ -428,7 +458,7 @@ await proc.wait()
 
         <div class="footer">
             Request ID: {ctx.request_id} &bull;
-            Detected by <a href="https://github.com/pyhub-kr/fastapi-loopguard">LoopGuard</a>
+            Detected by <a href="https://github.com/parhamdavari/fastapi-loopguard">LoopGuard</a>
         </div>
     </div>
 </body>
@@ -439,7 +469,9 @@ await proc.wait()
         return json.dumps(
             {
                 "error": "event_loop_blocked",
-                "message": "Blocking operation detected in async endpoint",
+                "message": (
+                    "Event loop blocking detected while this request was in flight"
+                ),
                 "request": {
                     "id": ctx.request_id,
                     "method": ctx.method,
@@ -568,11 +600,7 @@ await proc.wait()
                         self._log_console_warning(ctx)
                         warning_logged = True
 
-                message = {
-                    "type": message["type"],
-                    "status": message.get("status", 200),
-                    "headers": headers,
-                }
+                message = {**message, "headers": headers}
 
             await send(message)
 
@@ -613,17 +641,15 @@ await proc.wait()
                     ]
                 )
 
-                message = {
-                    "type": message["type"],
-                    "status": message.get("status", 200),
-                    "headers": headers,
-                }
+                message = {**message, "headers": headers}
                 await send(message)
 
-            elif message["type"] == "http.response.body":
-                if blocking_detected:
-                    # Skip original body - we'll send error response after
-                    return
+            elif blocking_detected:
+                # Skip the rest of the original response - the 503 replaces it
+                return
+
+            else:
+                # Body, trailers, pathsend, or any other message: pass through
                 await send(message)
 
         await self.app(scope, receive, send_wrapper)

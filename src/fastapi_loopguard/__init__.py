@@ -1,4 +1,8 @@
-"""FastAPI LoopGuard - Detect event-loop blocking with per-request attribution.
+"""FastAPI LoopGuard - Detect event-loop blocking and report in-flight requests.
+
+The sentinel measures event-loop lag, so it cannot identify the single
+handler that blocked; it attributes each stall to every request that was
+in flight at the time.
 
 Usage:
     from fastapi import FastAPI
@@ -29,6 +33,8 @@ v0.3.0 Changes:
     - High-concurrency configuration documentation
 """
 
+from importlib.metadata import version as _package_version
+
 from .config import LoopGuardConfig
 from .context import (
     RequestContext,
@@ -42,7 +48,7 @@ from .context import (
 from .middleware import LoopGuardMiddleware
 from .monitor import SentinelMonitor
 
-__version__ = "0.3.0"
+__version__ = _package_version("fastapi-loopguard")
 
 __all__ = [
     # Core classes

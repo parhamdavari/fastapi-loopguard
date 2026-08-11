@@ -4,6 +4,11 @@ import time
 import pytest
 
 from fastapi_loopguard.config import LoopGuardConfig
+from fastapi_loopguard.context import (
+    RequestContext,
+    register_request,
+    unregister_request,
+)
 from fastapi_loopguard.monitor import SentinelMonitor
 
 
@@ -63,6 +68,57 @@ async def test_cumulative_blocking_detection() -> None:
 
     finally:
         await monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_single_block_reported_once() -> None:
+    # A single long block must produce exactly one event. The sample that
+    # fired the single-shot detection must not be re-counted by the
+    # cumulative window as a second event.
+    config = LoopGuardConfig(
+        monitor_interval_ms=10.0,
+        calibration_iterations=10,
+        fallback_threshold_ms=50.0,
+        cumulative_blocking_enabled=True,
+        cumulative_blocking_threshold_ms=200.0,
+        cumulative_window_ms=1000.0,
+        log_blocking_events=False,
+    )
+    detected: list[float] = []
+
+    def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+        detected.append(lag_ms)
+
+    monitor = SentinelMonitor(config, on_blocking=on_blocking)
+    ctx = RequestContext(request_id="req-1", path="/x", method="GET")
+
+    await monitor.start()
+    await asyncio.sleep(0.05)  # Let the monitor loop start ticking
+    register_request(ctx)
+    try:
+        time.sleep(0.3)  # ONE 300ms block, above both thresholds
+        await asyncio.sleep(0.1)  # Several monitor iterations observe the aftermath
+    finally:
+        unregister_request(ctx.request_id)
+        await monitor.stop()
+
+    assert len(detected) == 1, f"expected exactly one event, got {detected}"
+    assert 250.0 <= detected[0] <= 450.0
+    assert ctx.blocking_count == 1
+    assert 250.0 <= ctx.total_blocking_ms <= 450.0
+
+
+def test_cumulative_events_tracked_separately() -> None:
+    # Cumulative window sums must not be mixed into the individual-lag list;
+    # they carry different semantics (sum vs sample).
+    ctx = RequestContext(request_id="r1", path="/", method="GET")
+    ctx.record_blocking(30.0)
+    ctx.record_blocking(120.0, cumulative=True)
+
+    assert [lag for lag, _ in ctx.blocking_events] == [30.0]
+    assert [lag for lag, _ in ctx.cumulative_events] == [120.0]
+    assert ctx.blocking_count == 2
+    assert ctx.total_blocking_ms == 150.0
 
 
 @pytest.mark.asyncio

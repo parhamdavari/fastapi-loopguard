@@ -45,7 +45,10 @@ class TestSentinelMonitor:
         assert monitor.baseline_ms >= 0
         assert monitor.threshold_ms > 0
         assert threshold == monitor.threshold_ms
-        assert monitor.threshold_ms >= config.fallback_threshold_ms
+        # Calibration may tighten the threshold, never exceed the fallback,
+        # and never resolve below the sampling interval
+        assert monitor.threshold_ms <= config.fallback_threshold_ms
+        assert monitor.threshold_ms >= config.monitor_interval_ms
         assert monitor.is_calibrated
 
     async def test_start_and_stop(self, config: LoopGuardConfig) -> None:
@@ -380,6 +383,92 @@ class TestSentinelMonitorAdaptive:
         assert monitor._adaptive is not None
         assert monitor._adaptive.sample_count > 0
 
+    async def test_adaptive_does_not_discard_calibrated_threshold(self) -> None:
+        """Adaptive mode must not undo a calibration-tightened threshold.
+
+        The adaptive floor was fixed at fallback_threshold_ms and its first
+        update fired immediately, so a calibrated threshold below the
+        fallback was overwritten back to the fallback on the first tick.
+        """
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            threshold_multiplier=3.0,
+            fallback_threshold_ms=20.0,
+            adaptive_threshold=True,
+            adaptive_window_size=100,
+            adaptive_min_samples=100,  # Not reached during this test
+            adaptive_update_interval_ms=10.0,  # Updates fire often
+            cumulative_blocking_enabled=False,
+            log_blocking_events=False,
+        )
+        monitor = SentinelMonitor(config)
+
+        await monitor.start()  # Calibrates idle: threshold below fallback
+        calibrated = monitor.threshold_ms
+        assert calibrated < config.fallback_threshold_ms
+
+        await asyncio.sleep(0.1)  # Several adaptive update ticks pass
+        await monitor.stop()
+
+        assert monitor.threshold_ms == calibrated
+
+    def test_set_min_threshold_lowers_floor(self) -> None:
+        """A lowered floor takes effect immediately and bounds recalculation."""
+        adaptive = AdaptiveThreshold(
+            window_size=100,
+            percentile=0.95,
+            multiplier=5.0,
+            min_threshold_ms=50.0,
+            min_samples=10,
+        )
+
+        adaptive.set_min_threshold(10.0)
+        assert adaptive.current_threshold_ms == 10.0
+
+        for _ in range(20):
+            adaptive.add_sample(1.0)
+        # P95 of 1.0 samples x 5 = 5.0, floored at the new 10.0
+        assert adaptive.recalculate() == 10.0
+
+    async def test_adaptive_threshold_not_fed_by_detected_blocking(self) -> None:
+        """Sustained blocking must not raise the adaptive threshold.
+
+        Detected-blocking samples fed the window, so under sustained blocking
+        the threshold chased the blocking upward and detections stopped.
+        """
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=1000,  # Never completes during this test
+            threshold_multiplier=3.0,
+            fallback_threshold_ms=20.0,
+            adaptive_threshold=True,
+            adaptive_window_size=100,
+            adaptive_min_samples=10,
+            adaptive_update_interval_ms=50.0,
+            cumulative_blocking_enabled=False,
+            log_blocking_events=False,
+        )
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        monitor = SentinelMonitor(config, on_blocking=on_blocking)
+        await monitor.start_with_background_calibration()
+        await asyncio.sleep(0.05)  # Let the monitor loop start ticking
+
+        for _ in range(30):
+            time.sleep(0.03)  # 30ms block, above the 20ms fallback threshold
+            await asyncio.sleep(0.002)
+
+        await monitor.stop()
+
+        # The threshold must not have chased the blocking upward
+        assert monitor.threshold_ms == config.fallback_threshold_ms
+        # Detection must keep firing for the whole run, not fade out
+        assert len(events) >= 25
+
 
 class TestMonitorIdempotency:
     """Tests for idempotent start/stop operations."""
@@ -557,8 +646,8 @@ class TestThresholdEdgeCases:
 
         await monitor.stop()
 
-    async def test_threshold_above_fallback_after_calibration(self) -> None:
-        """Test threshold is at least fallback after calibration."""
+    async def test_threshold_never_above_fallback_after_calibration(self) -> None:
+        """Calibration must never raise the threshold above the fallback."""
         config = LoopGuardConfig(
             monitor_interval_ms=5.0,
             calibration_iterations=10,
@@ -570,9 +659,35 @@ class TestThresholdEdgeCases:
 
         await monitor.calibrate()
 
-        # Threshold should be at least fallback
-        assert monitor.threshold_ms >= config.fallback_threshold_ms
+        assert monitor.threshold_ms <= config.fallback_threshold_ms
+        assert monitor.threshold_ms >= config.monitor_interval_ms
         assert monitor.is_calibrated
+
+    async def test_contaminated_calibration_never_raises_threshold(self) -> None:
+        """Calibration under live blocking must not raise the threshold.
+
+        A percentile of contaminated samples let a blocking app calibrate
+        itself blind: the threshold went far above the fallback and real
+        blocking was never detected again.
+        """
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            threshold_multiplier=3.0,
+            fallback_threshold_ms=20.0,
+            log_blocking_events=False,
+        )
+        monitor = SentinelMonitor(config)
+
+        calibration = asyncio.create_task(monitor.calibrate())
+        # App blocks ~20ms per request for the whole calibration window
+        while not calibration.done():
+            time.sleep(0.02)
+            await asyncio.sleep(0.001)
+        await calibration
+
+        assert monitor.is_calibrated
+        assert monitor.threshold_ms <= config.fallback_threshold_ms
 
 
 class TestCalibrationEdgeCases:
@@ -629,27 +744,23 @@ class TestCalibrationEdgeCases:
 
         await monitor.stop()
 
-    async def test_calibration_calculates_p75(self) -> None:
-        """Test that calibration correctly calculates P75 percentile."""
+    async def test_calibration_fallback_ceiling_beats_interval_floor(self) -> None:
+        """The fallback ceiling is absolute, even below the interval floor."""
         config = LoopGuardConfig(
             monitor_interval_ms=1.0,  # Very fast
             calibration_iterations=20,
             threshold_multiplier=5.0,
-            fallback_threshold_ms=0.1,
+            fallback_threshold_ms=0.1,  # Below the interval floor
             log_blocking_events=False,
         )
         monitor = SentinelMonitor(config)
 
         await monitor.calibrate()
 
-        # Baseline should be set (P75 of samples)
+        # Baseline is the idle floor (min sample), never negative
         assert monitor.baseline_ms >= 0
-        # Threshold should be baseline * multiplier (or fallback if higher)
-        expected_min = max(
-            monitor.baseline_ms * config.threshold_multiplier,
-            config.fallback_threshold_ms,
-        )
-        assert monitor.threshold_ms >= expected_min - 0.001  # Small tolerance
+        # The fallback remains a hard ceiling
+        assert monitor.threshold_ms == config.fallback_threshold_ms
 
 
 class TestTaskCancellation:

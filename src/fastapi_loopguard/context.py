@@ -24,7 +24,10 @@ class RequestContext:
         path: The request path (e.g., "/api/users").
         method: HTTP method (GET, POST, etc.).
         start_time: Monotonic timestamp when request started.
-        blocking_events: List of (lag_ms, timestamp) tuples for blocking detected.
+        blocking_events: List of (lag_ms, timestamp) tuples, one per observed
+            lag sample that exceeded the threshold.
+        cumulative_events: List of (lag_ms, timestamp) tuples where lag_ms is
+            a window sum from cumulative detection, not an individual sample.
     """
 
     request_id: str
@@ -32,20 +35,30 @@ class RequestContext:
     method: str
     start_time: float = field(default_factory=time.monotonic)
     blocking_events: list[tuple[float, float]] = field(default_factory=list)
+    cumulative_events: list[tuple[float, float]] = field(default_factory=list)
 
-    def record_blocking(self, lag_ms: float) -> None:
-        """Record a blocking event for this request."""
-        self.blocking_events.append((lag_ms, time.monotonic()))
+    def record_blocking(self, lag_ms: float, cumulative: bool = False) -> None:
+        """Record a blocking event for this request.
+
+        Args:
+            lag_ms: The observed lag in milliseconds.
+            cumulative: True when lag_ms is a window sum from cumulative
+                detection rather than a single observed lag sample.
+        """
+        events = self.cumulative_events if cumulative else self.blocking_events
+        events.append((lag_ms, time.monotonic()))
 
     @property
     def total_blocking_ms(self) -> float:
-        """Sum of all blocking event durations."""
-        return sum(lag for lag, _ in self.blocking_events)
+        """Sum of all blocking event durations (individual and cumulative)."""
+        return sum(lag for lag, _ in self.blocking_events) + sum(
+            lag for lag, _ in self.cumulative_events
+        )
 
     @property
     def blocking_count(self) -> int:
-        """Number of blocking events detected."""
-        return len(self.blocking_events)
+        """Number of blocking events detected (individual and cumulative)."""
+        return len(self.blocking_events) + len(self.cumulative_events)
 
 
 class RequestRegistry:
