@@ -428,7 +428,7 @@ await proc.wait()
 
         <div class="footer">
             Request ID: {ctx.request_id} &bull;
-            Detected by <a href="https://github.com/pyhub-kr/fastapi-loopguard">LoopGuard</a>
+            Detected by <a href="https://github.com/parhamdavari/fastapi-loopguard">LoopGuard</a>
         </div>
     </div>
 </body>

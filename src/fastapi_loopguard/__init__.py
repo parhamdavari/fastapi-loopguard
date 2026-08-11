@@ -29,6 +29,8 @@ v0.3.0 Changes:
     - High-concurrency configuration documentation
 """
 
+from importlib.metadata import version as _package_version
+
 from .config import LoopGuardConfig
 from .context import (
     RequestContext,
@@ -42,7 +44,7 @@ from .context import (
 from .middleware import LoopGuardMiddleware
 from .monitor import SentinelMonitor
 
-__version__ = "0.3.0"
+__version__ = _package_version("fastapi-loopguard")
 
 __all__ = [
     # Core classes
