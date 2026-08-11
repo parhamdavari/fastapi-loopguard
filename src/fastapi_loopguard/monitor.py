@@ -70,6 +70,16 @@ class AdaptiveThreshold:
         """Number of samples currently in the window."""
         return len(self._samples)
 
+    def set_min_threshold(self, min_threshold_ms: float) -> None:
+        """Update the floor, e.g. after calibration tightens the threshold.
+
+        Until enough samples are collected, the current threshold follows the
+        floor so a stale initial value cannot overwrite a calibrated one.
+        """
+        self._min_threshold_ms = min_threshold_ms
+        if len(self._samples) < self._min_samples:
+            self._current_threshold_ms = min_threshold_ms
+
     def add_sample(self, lag_ms: float) -> None:
         """Add a new lag sample to the sliding window.
 
@@ -223,6 +233,11 @@ class SentinelMonitor:
         )
         self._calibrated = True
 
+        # Adaptive mode floors at the calibrated threshold, not the fallback;
+        # otherwise its first update would undo the calibration
+        if self._adaptive:
+            self._adaptive.set_min_threshold(self._threshold_ms)
+
         logger.info(
             "LoopGuard calibrated: baseline=%.2fms, threshold=%.2fms",
             self._baseline_ms,
@@ -248,6 +263,9 @@ class SentinelMonitor:
         loop = asyncio.get_running_loop()
         interval_sec = self._config.monitor_interval_ms / 1000.0
         adapt_interval_sec = self._config.adaptive_update_interval_ms / 1000.0
+        # Start the adaptive clock now; a 0.0 start would fire the first
+        # update on the very first iteration
+        self._last_adapt_time = loop.time()
 
         while self._running:
             try:

@@ -383,6 +383,54 @@ class TestSentinelMonitorAdaptive:
         assert monitor._adaptive is not None
         assert monitor._adaptive.sample_count > 0
 
+    async def test_adaptive_does_not_discard_calibrated_threshold(self) -> None:
+        """Adaptive mode must not undo a calibration-tightened threshold.
+
+        The adaptive floor was fixed at fallback_threshold_ms and its first
+        update fired immediately, so a calibrated threshold below the
+        fallback was overwritten back to the fallback on the first tick.
+        """
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=10,
+            threshold_multiplier=3.0,
+            fallback_threshold_ms=20.0,
+            adaptive_threshold=True,
+            adaptive_window_size=100,
+            adaptive_min_samples=100,  # Not reached during this test
+            adaptive_update_interval_ms=10.0,  # Updates fire often
+            cumulative_blocking_enabled=False,
+            log_blocking_events=False,
+        )
+        monitor = SentinelMonitor(config)
+
+        await monitor.start()  # Calibrates idle: threshold below fallback
+        calibrated = monitor.threshold_ms
+        assert calibrated < config.fallback_threshold_ms
+
+        await asyncio.sleep(0.1)  # Several adaptive update ticks pass
+        await monitor.stop()
+
+        assert monitor.threshold_ms == calibrated
+
+    def test_set_min_threshold_lowers_floor(self) -> None:
+        """A lowered floor takes effect immediately and bounds recalculation."""
+        adaptive = AdaptiveThreshold(
+            window_size=100,
+            percentile=0.95,
+            multiplier=5.0,
+            min_threshold_ms=50.0,
+            min_samples=10,
+        )
+
+        adaptive.set_min_threshold(10.0)
+        assert adaptive.current_threshold_ms == 10.0
+
+        for _ in range(20):
+            adaptive.add_sample(1.0)
+        # P95 of 1.0 samples x 5 = 5.0, floored at the new 10.0
+        assert adaptive.recalculate() == 10.0
+
     async def test_adaptive_threshold_not_fed_by_detected_blocking(self) -> None:
         """Sustained blocking must not raise the adaptive threshold.
 
