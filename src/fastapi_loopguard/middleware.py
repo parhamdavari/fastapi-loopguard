@@ -620,10 +620,12 @@ await proc.wait()
                 }
                 await send(message)
 
-            elif message["type"] == "http.response.body":
-                if blocking_detected:
-                    # Skip original body - we'll send error response after
-                    return
+            elif blocking_detected:
+                # Skip the rest of the original response - the 503 replaces it
+                return
+
+            else:
+                # Body, trailers, pathsend, or any other message: pass through
                 await send(message)
 
         await self.app(scope, receive, send_wrapper)

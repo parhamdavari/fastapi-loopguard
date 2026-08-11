@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import pytest
 from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
+from starlette.types import Message, Receive, Scope, Send
 from starlette.websockets import WebSocket
 
 from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware
@@ -486,6 +487,72 @@ class TestWebSocketPassthrough:
 
         # Registry should be empty - WebSocket doesn't register
         assert get_registry().active_count() == 0
+
+
+class TestSendWrapperConformance:
+    """Send wrappers must forward unknown ASGI message types and preserve keys."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    async def _drive(
+        self,
+        config: LoopGuardConfig,
+        messages: list[Message],
+    ) -> list[Message]:
+        """Send one request through the middleware, return what the server got."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            for message in messages:
+                await send(message)
+
+        middleware = LoopGuardMiddleware(app, config=config)
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+        await middleware(scope, receive, send)
+        return sent
+
+    async def test_strict_mode_forwards_pathsend(self) -> None:
+        """FileResponse on pathsend-capable servers must not hang in strict mode."""
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent = await self._drive(
+            config,
+            [
+                {"type": "http.response.start", "status": 200, "headers": []},
+                {"type": "http.response.pathsend", "path": "/tmp/file.bin"},
+            ],
+        )
+        assert "http.response.pathsend" in [m["type"] for m in sent]
+
+    async def test_strict_mode_forwards_trailers_messages(self) -> None:
+        """http.response.trailers must pass through the strict-mode wrapper."""
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent = await self._drive(
+            config,
+            [
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [],
+                    "trailers": True,
+                },
+                {"type": "http.response.body", "body": b"data", "more_body": False},
+                {
+                    "type": "http.response.trailers",
+                    "headers": [(b"x-checksum", b"abc")],
+                },
+            ],
+        )
+        assert "http.response.trailers" in [m["type"] for m in sent]
 
 
 class TestMiddlewareErrorHandling:
