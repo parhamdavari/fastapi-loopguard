@@ -1,9 +1,10 @@
 # Changelog
 
-## 0.6.0 (unreleased)
+## 0.6.0 (2026-08-12)
 
-Detection-core hardening. Fixes found by a line-by-line audit of the
-detection path; every item below changes observable behavior.
+Detection-core hardening plus the AI test harness. Fixes found by a
+line-by-line audit of the detection path; every item below changes
+observable behavior.
 
 - The adaptive threshold can no longer ratchet itself blind. Recalculation
   is clamped to the `fallback_threshold_ms` ceiling; previously each raise
@@ -34,6 +35,35 @@ detection path; every item below changes observable behavior.
   context instead of hardcoded zero literals.
 - Calibration clamps a negative raw baseline (timers may fire up to
   clock_resolution early) to 0.
+
+AI test harness (pytest plugin):
+
+- New `loopguard_all_async` mode (ini or `--loopguard-all-async`): every
+  async test is treated as `@pytest.mark.no_blocking`, with a new
+  `@pytest.mark.allow_blocking` opt-out marker. Built for gating
+  AI-generated code without per-test annotations.
+- New `loopguard_report` option (ini or `--loopguard-report=PATH`): writes
+  a JSON verdict file at session end with per-test blocking events and
+  concrete sync->async fix hints. See `docs/AI-HARNESS.md`.
+- The detector is now armed before the test body runs. A test that blocked
+  before its first real await (an ASGI request dispatch does exactly that)
+  was previously invisible to the gate.
+- BREAKING: the `loopguard_detector` fixture was removed. It yielded a
+  detector that was never started, so assertions on its (always empty)
+  `blocking_events` passed unconditionally.
+- `@pytest.mark.no_blocking` on a synchronous test now emits a warning
+  instead of silently doing nothing.
+- The plugin no longer calls `asyncio.iscoroutinefunction` (deprecated on
+  Python 3.14), so downstream suites running `-W error` stay green.
+- `BlockingDetector.stop()` no longer swallows the test's own cancellation.
+
+Also:
+
+- New `evals/` directory: a starter benchmark (5 FastAPI tasks + runner)
+  scoring whether an AI model writes non-blocking async code.
+- `configure_logging()` is idempotent and disables propagation;
+  `StructuredFormatter` preserves `exc_info` tracebacks.
+- `prometheus-client` joined the `dev` extra so the metrics tests run in CI.
 
 ## 0.5.0 (2026-08-11)
 
