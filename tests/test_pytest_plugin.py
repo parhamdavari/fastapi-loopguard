@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 
 import pytest
@@ -379,3 +380,167 @@ class TestPluginHygiene:
         result.assert_outcomes(failed=1)
         assert "the test itself is broken" in result.stdout.str()
         assert "Event loop blocking detected" not in result.stdout.str()
+
+
+class TestAllAsyncMode:
+    """loopguard_all_async: the harness switch for unannotated test suites."""
+
+    def _make_suite(self, pytester: pytest.Pytester) -> None:
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            async def test_blocks():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+
+            async def test_clean():
+                await asyncio.sleep(0.01)
+
+            @pytest.mark.allow_blocking
+            async def test_opted_out():
+                time.sleep(0.2)
+        """)
+
+    def test_ini_flags_unmarked_blocking_test(self, pytester: pytest.Pytester) -> None:
+        self._make_suite(pytester)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+            loopguard_all_async = true
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1, passed=2)
+        assert "Event loop blocking detected" in result.stdout.str()
+
+    def test_cli_flag_equivalent(self, pytester: pytest.Pytester) -> None:
+        self._make_suite(pytester)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v", "--loopguard-all-async")
+        result.assert_outcomes(failed=1, passed=2)
+
+    def test_off_by_default(self, pytester: pytest.Pytester) -> None:
+        self._make_suite(pytester)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=3)
+
+    def test_sync_tests_out_of_scope_without_warning(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """All-async mode skips sync tests silently (no marker, no warning)."""
+        pytester.makepyfile("""
+            import time
+
+            def test_sync_blocks():
+                time.sleep(0.05)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+            loopguard_all_async = true
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=0)
+
+
+class TestJsonReport:
+    """--loopguard-report: the machine-readable verdict file."""
+
+    def test_report_written_with_verdicts_and_hints(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking
+            async def test_blocks():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+
+            @pytest.mark.no_blocking
+            async def test_clean():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v", "--loopguard-report=loopguard.json")
+        result.assert_outcomes(failed=1, passed=1)
+
+        report_file = pytester.path / "loopguard.json"
+        assert report_file.exists()
+        report = json.loads(report_file.read_text())
+
+        assert report["schema_version"] == 1
+        assert report["threshold_ms"] == 10.0
+        assert report["totals"] == {"tests": 2, "flagged": 1}
+
+        by_verdict = {r["verdict"]: r for r in report["tests"]}
+        blocked = by_verdict["blocked"]
+        assert "test_blocks" in blocked["nodeid"]
+        assert blocked["events"][0]["lag_ms"] > 10.0
+        assert any("time.sleep" in hint for hint in blocked["hints"])
+
+        clean = by_verdict["clean"]
+        assert clean["events"] == []
+        assert clean["hints"] == []
+
+    def test_ini_report_path(self, pytester: pytest.Pytester) -> None:
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking
+            async def test_clean():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_report = from-ini.json
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1)
+        assert (pytester.path / "from-ini.json").exists()
+
+    def test_no_report_without_option(self, pytester: pytest.Pytester) -> None:
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking
+            async def test_clean():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1)
+        assert not list(pytester.path.glob("*.json"))
