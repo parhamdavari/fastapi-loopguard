@@ -158,3 +158,27 @@ class TestCrossFieldValidation:
         """A bare string would silently become a substring match."""
         with pytest.raises(ValueError, match="exclude_paths"):
             LoopGuardConfig(exclude_paths="/health")  # type: ignore[arg-type]
+
+
+class TestRemainingValidationBranches:
+    """The validation branches that had no dedicated test."""
+
+    def test_adaptive_min_samples_above_window_rejected(self) -> None:
+        with pytest.raises(ValueError, match="adaptive_min_samples"):
+            LoopGuardConfig(adaptive_window_size=100, adaptive_min_samples=200)
+
+    def test_cumulative_threshold_nonpositive_rejected(self) -> None:
+        with pytest.raises(ValueError, match="cumulative_blocking_threshold_ms"):
+            LoopGuardConfig(cumulative_blocking_threshold_ms=0)
+
+    def test_cumulative_window_nonpositive_rejected(self) -> None:
+        with pytest.raises(ValueError, match="cumulative_window_ms"):
+            LoopGuardConfig(cumulative_window_ms=-1)
+
+    def test_cumulative_window_below_interval_rejected(self) -> None:
+        with pytest.raises(ValueError, match="cumulative_window_ms"):
+            LoopGuardConfig(
+                monitor_interval_ms=50.0,
+                fallback_threshold_ms=50.0,
+                cumulative_window_ms=20.0,
+            )

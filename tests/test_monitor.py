@@ -1163,3 +1163,74 @@ class TestSingleLogLinePerEvent:
         for ctx in contexts:
             assert ctx.request_id in message
             assert ctx.blocking_count == 1
+
+
+class TestCalibrationFailurePath:
+    """A failed calibration keeps the fallback and never raises into startup."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    async def test_failed_background_calibration_keeps_fallback(self) -> None:
+        config = LoopGuardConfig(log_blocking_events=False, fallback_threshold_ms=50.0)
+
+        class ExplodingCalibration(SentinelMonitor):
+            async def calibrate(self) -> float:
+                raise RuntimeError("clock went sideways")
+
+        monitor = ExplodingCalibration(config)
+
+        # Must not raise into startup
+        await monitor.start_with_background_calibration()
+        await asyncio.sleep(0.05)  # let the background task fail
+
+        assert monitor.is_running
+        assert not monitor.is_calibrated
+        assert monitor.threshold_ms == config.fallback_threshold_ms
+
+        await monitor.stop()
+
+
+class TestMonitorLoopRecovery:
+    """An exception in the loop body must not kill the monitor."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    async def test_monitor_loop_survives_handler_exception(self) -> None:
+        config = LoopGuardConfig(
+            monitor_interval_ms=2.0,
+            calibration_iterations=10,
+            fallback_threshold_ms=5.0,
+            log_blocking_events=False,
+        )
+        calls: list[float] = []
+
+        class FlakyHandler(SentinelMonitor):
+            def _handle_blocking(
+                self, lag_ms: float, is_cumulative: bool = False
+            ) -> None:
+                calls.append(lag_ms)
+                if len(calls) == 1:
+                    raise RuntimeError("handler hiccup")
+
+        monitor = FlakyHandler(config)
+        await monitor.start()
+        await asyncio.sleep(0.01)
+
+        time.sleep(0.05)  # first detection -> handler raises
+        await asyncio.sleep(0.01)
+        assert len(calls) == 1
+        assert monitor.is_running
+
+        await asyncio.sleep(1.1)  # ride out the error-recovery pause
+
+        time.sleep(0.05)  # second detection -> handler succeeds
+        await asyncio.sleep(0.01)
+
+        await monitor.stop()
+        assert len(calls) >= 2

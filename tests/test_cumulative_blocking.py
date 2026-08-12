@@ -165,3 +165,64 @@ async def test_cumulative_blocking_can_be_disabled() -> None:
         )
     finally:
         await monitor.stop()
+
+
+def test_window_pruning_by_age() -> None:
+    """Samples older than the window drop out and stop contributing."""
+    config = LoopGuardConfig(
+        monitor_interval_ms=10.0,
+        fallback_threshold_ms=50.0,
+        cumulative_blocking_threshold_ms=100.0,
+        cumulative_window_ms=200.0,  # short window
+        log_blocking_events=False,
+    )
+    detected: list[float] = []
+
+    def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+        detected.append(lag_ms)
+
+    monitor = SentinelMonitor(config, on_blocking=on_blocking)
+
+    # 90ms of excess accumulated at t=0.00-0.08 - just under the threshold
+    for i in range(9):
+        monitor._check_cumulative(now=i * 0.01, lag_ms=10.0, triggered=False)
+    assert detected == []
+    assert len(monitor._lag_history) == 9
+
+    # After an idle gap longer than the window, old samples are pruned:
+    # this tick alone cannot fire even though 90 + 10 would have
+    monitor._check_cumulative(now=1.0, lag_ms=10.0, triggered=False)
+    assert detected == []
+    assert len(monitor._lag_history) == 1
+
+
+@pytest.mark.asyncio
+async def test_cumulative_attribution_end_to_end() -> None:
+    """Sub-threshold repeated blocking attributes cumulatively to contexts."""
+    config = LoopGuardConfig(
+        monitor_interval_ms=10.0,
+        fallback_threshold_ms=50.0,  # single-shot stays quiet
+        cumulative_blocking_threshold_ms=60.0,
+        cumulative_window_ms=1000.0,
+        log_blocking_events=False,
+    )
+    monitor = SentinelMonitor(config)
+    await monitor.start_with_background_calibration()
+    await asyncio.sleep(0.15)
+
+    ctx = RequestContext(request_id="cumul-e2e", path="/api/report", method="GET")
+    register_request(ctx)
+
+    try:
+        # Repeated sub-threshold blocking: each ~25ms block stays under the
+        # 50ms single-shot threshold, but the window sums past 60ms
+        for _ in range(6):
+            time.sleep(0.025)
+            await asyncio.sleep(0.02)
+    finally:
+        unregister_request(ctx.request_id)
+        await monitor.stop()
+
+    assert len(ctx.cumulative_events) >= 1
+    assert ctx.blocking_count >= 1
+    assert ctx.total_blocking_ms > 0

@@ -587,3 +587,126 @@ class TestStrictModeStreaming:
             await middleware(scope, receive, send)
 
         assert sent == []  # neither the app's 200 nor a LoopGuard 503
+
+
+class TestStrictModeHeaders:
+    """Full header contract of the strict 503 and the clean pass-through."""
+
+    def _blocking_app(self) -> FastAPI:
+        app = FastAPI()
+
+        @app.get("/blocking")
+        async def blocking_endpoint() -> dict[str, str]:
+            time.sleep(0.1)
+            await asyncio.sleep(0.02)
+            return {"status": "blocked"}
+
+        @app.get("/fast")
+        async def fast_endpoint() -> dict[str, str]:
+            await asyncio.sleep(0.001)
+            return {"status": "fast"}
+
+        config = LoopGuardConfig(
+            enforcement_mode="strict",
+            monitor_interval_ms=2.0,
+            fallback_threshold_ms=5.0,
+            log_blocking_events=False,
+        )
+        app.add_middleware(LoopGuardMiddleware, config=config)
+        return app
+
+    async def test_503_carries_full_strict_header_set(self) -> None:
+        app = self._blocking_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            await client.get("/fast")
+            await asyncio.sleep(0.05)
+            response = await client.get("/blocking")
+
+        assert response.status_code == 503
+        assert response.headers.get("x-loopguard-enforcement") == "strict"
+        assert "x-request-id" in response.headers
+        assert int(response.headers["x-blocking-count"]) >= 1
+        assert float(response.headers["x-blocking-total-ms"]) > 0
+        # The strict 503 header set omits x-blocking-detected by contract
+        assert "x-blocking-detected" not in response.headers
+        assert int(response.headers["content-length"]) == len(response.content)
+
+    async def test_clean_strict_response_carries_diagnostic_headers(self) -> None:
+        app = self._blocking_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.get("/fast")
+
+        assert response.status_code == 200
+        assert response.headers.get("x-blocking-detected") == "false"
+        assert response.headers.get("x-blocking-count") == "0"
+        assert "x-loopguard-enforcement" not in response.headers
+
+    async def test_missing_accept_header_gets_json(self) -> None:
+        app = self._blocking_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            await client.get("/fast")
+            await asyncio.sleep(0.05)
+            response = await client.get("/blocking", headers={"Accept": ""})
+
+        assert response.status_code == 503
+        assert response.headers["content-type"].startswith("application/json")
+
+
+class TestStrictModeBystanders:
+    """Documents FINDINGS: strict mode 503s every in-flight request.
+
+    The sentinel measures lag, not call stacks, so it cannot name the
+    culprit; under concurrency, strict mode punishes bystanders. This is
+    the documented reason strict is opt-in (invariant 6).
+    """
+
+    async def test_concurrent_bystander_also_gets_503(self) -> None:
+        app = FastAPI()
+
+        @app.get("/blocking")
+        async def blocking_endpoint() -> dict[str, str]:
+            await asyncio.sleep(0.02)  # let the bystander register first
+            time.sleep(0.1)
+            await asyncio.sleep(0.02)
+            return {"status": "blocked"}
+
+        @app.get("/innocent")
+        async def innocent_endpoint() -> dict[str, str]:
+            await asyncio.sleep(0.2)  # in flight during the stall
+            return {"status": "innocent"}
+
+        config = LoopGuardConfig(
+            enforcement_mode="strict",
+            monitor_interval_ms=2.0,
+            fallback_threshold_ms=5.0,
+            log_blocking_events=False,
+        )
+        app.add_middleware(LoopGuardMiddleware, config=config)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            await client.get("/innocent")  # warmup: start monitor
+            await asyncio.sleep(0.05)
+
+            culprit, bystander = await asyncio.gather(
+                client.get("/blocking"),
+                client.get("/innocent"),
+            )
+
+        assert culprit.status_code == 503
+        # The bystander was in flight during the stall, so it is 503'd too
+        assert bystander.status_code == 503
