@@ -13,7 +13,11 @@ from starlette.types import Message, Receive, Scope, Send
 from starlette.websockets import WebSocket
 
 from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware, SentinelMonitor
-from fastapi_loopguard.context import get_registry
+from fastapi_loopguard.context import RequestContext, get_registry
+from fastapi_loopguard.middleware import (
+    _console_supports_color,
+    _format_console_warning,
+)
 
 
 @pytest.fixture
@@ -1250,3 +1254,84 @@ class TestScopeStatePreserved:
 
         assert seen["outer_middleware"] == "present"
         assert "loopguard_request_id" in seen
+
+
+class TestConsoleWarningFormat:
+    """The blocking banner: content, color discipline, and parity."""
+
+    def _ctx(self) -> "RequestContext":
+        ctx = RequestContext(request_id="deadbeef", path="/api/users", method="GET")
+        ctx.record_blocking(3000.1)
+        return ctx
+
+    def test_plain_rendering_has_all_content_and_no_escapes(self) -> None:
+        text = _format_console_warning(self._ctx(), use_color=False)
+
+        assert "LOOPGUARD: Event Loop Blocked!" in text
+        assert "GET /api/users" in text
+        assert "deadbeef" in text
+        assert "1 time(s), 3000.1ms total" in text
+        # Invariant 6 wording: never claims to know the culprit
+        assert "may be this request or any other concurrent request" in text
+        assert "ALL requests were frozen" in text
+        for fix in (
+            "time.sleep(n)       -> await asyncio.sleep(n)",
+            "requests.get(url)   -> await httpx.AsyncClient().get(url)",
+            "open(f).read()      -> await aiofiles.open(f)",
+            "subprocess.run(...) -> await asyncio.create_subprocess_exec(...)",
+        ):
+            assert fix in text
+        assert "https://fastapi.tiangolo.com/async/" in text
+        assert "\x1b[" not in text
+
+    def test_color_rendering_is_plain_plus_escapes(self) -> None:
+        import re
+
+        ctx = self._ctx()
+        colored = _format_console_warning(ctx, use_color=True)
+        plain = _format_console_warning(ctx, use_color=False)
+
+        assert "\x1b[" in colored
+        stripped = re.sub(r"\x1b\[[0-9;]*m", "", colored)
+        assert stripped == plain
+
+    def test_color_decision(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class _Tty:
+            def isatty(self) -> bool:
+                return True
+
+        class _Pipe:
+            def isatty(self) -> bool:
+                return False
+
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        monkeypatch.setattr("sys.stderr", _Tty())
+        assert _console_supports_color() is True
+
+        monkeypatch.setenv("NO_COLOR", "1")
+        assert _console_supports_color() is False
+
+        monkeypatch.delenv("NO_COLOR")
+        monkeypatch.setattr("sys.stderr", _Pipe())
+        assert _console_supports_color() is False
+
+
+class TestErrorPageCodeBlocks:
+    """The 503 page's code examples must keep their newlines (issue #10)."""
+
+    def test_examples_are_pre_blocks_with_real_newlines(self) -> None:
+        config = LoopGuardConfig(log_blocking_events=False)
+        middleware = LoopGuardMiddleware(lambda: None, config=config)
+        ctx = RequestContext(request_id="deadbeef", path="/api/users", method="GET")
+        ctx.record_blocking(150.0)
+
+        html = middleware._generate_error_html(ctx)
+
+        assert '<pre class="code-block bad">' in html
+        assert '<pre class="code-block good">' in html
+        # Each example sits on its own line inside the <pre>
+        assert "\ntime.sleep(1)\n" in html
+        assert '\nrequests.get("https://api.example.com")\n' in html
+        assert "\nawait asyncio.sleep(1)\n" in html
+        # No div-wrapped code blocks remain (divs collapse the newlines)
+        assert '<div class="code-block' not in html
