@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 (2026-08-12)
 
 - The console blocking banner is restyled: a slim rule frame instead of
   the `=`/`!` walls, with ANSI color hierarchy (headline red, explanation
