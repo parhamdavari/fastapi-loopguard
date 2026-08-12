@@ -46,7 +46,7 @@ Sleep 4.5s
 Ctrl+L
 Type "# the server console explains what happened"
 Enter
-Type "grep -B 2 -A 18 'LOOPGUARD' /tmp/loopguard-demo.log"
+Type "grep -A 17 'LOOPGUARD' /tmp/loopguard-demo.log"
 Enter
 Sleep 2.5s
 Type "# pip install fastapi-loopguard  ->  app.add_middleware(LoopGuardMiddleware)"

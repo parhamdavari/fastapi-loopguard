@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import uuid
 from typing import TYPE_CHECKING
@@ -24,6 +25,71 @@ from .monitor import SentinelMonitor
 
 if TYPE_CHECKING:
     from .config import LoopGuardConfig
+
+# ANSI styles for the console banner
+_RESET = "\x1b[0m"
+_BOLD_RED = "\x1b[1;31m"
+_DIM = "\x1b[2m"
+_CYAN = "\x1b[36m"
+
+_BANNER_WIDTH = 72
+
+
+def _console_supports_color() -> bool:
+    """Color only on a real terminal, and never against NO_COLOR.
+
+    Escape codes in a redirected stream would pollute log files and
+    aggregators, so anything that is not a TTY gets plain text.
+    """
+    try:
+        is_tty = sys.stderr.isatty()
+    except (AttributeError, ValueError):
+        is_tty = False
+    return is_tty and not os.environ.get("NO_COLOR")
+
+
+def _format_console_warning(ctx: RequestContext, use_color: bool) -> str:
+    """Render the blocking banner, with or without ANSI color.
+
+    The plain rendering is the colored one minus escape codes — same
+    lines, same order — so log output and terminal output stay greppable
+    with the same patterns.
+    """
+
+    def paint(code: str, text: str) -> str:
+        return f"{code}{text}{_RESET}" if use_color else text
+
+    title = "LOOPGUARD: Event Loop Blocked!"
+    top_rule = f"── {title} " + "─" * max(0, _BANNER_WIDTH - len(title) - 4)
+    lines = [
+        "",
+        paint(_BOLD_RED, top_rule),
+        "",
+        f"  In-flight request: {ctx.method} {ctx.path}",
+        f"  Request ID: {ctx.request_id}",
+        f"  Blocked: {ctx.blocking_count} time(s), {ctx.total_blocking_ms:.1f}ms total",
+        "",
+        paint(
+            _DIM,
+            "  Blocking was detected while this request was in flight. "
+            "The culprit\n  may be this request or any other concurrent "
+            "request.\n  ALL requests were frozen while the event loop "
+            "was blocked.",
+        ),
+        "",
+        "  Common fixes:",
+        paint(
+            _CYAN,
+            "    time.sleep(n)       -> await asyncio.sleep(n)\n"
+            "    requests.get(url)   -> await httpx.AsyncClient().get(url)\n"
+            "    open(f).read()      -> await aiofiles.open(f)\n"
+            "    subprocess.run(...) -> await asyncio.create_subprocess_exec(...)",
+        ),
+        "",
+        "  Docs: https://fastapi.tiangolo.com/async/",
+        paint(_BOLD_RED, "─" * _BANNER_WIDTH),
+    ]
+    return "\n".join(lines)
 
 
 class LoopGuardMiddleware:
@@ -297,30 +363,10 @@ class LoopGuardMiddleware:
 
     def _log_console_warning(self, ctx: RequestContext) -> None:
         """Print attention-grabbing console warning to stderr."""
-        warning = f"""
-{"=" * 72}
-{"!" * 72}
-  LOOPGUARD: Event Loop Blocked!
-{"!" * 72}
-
-  In-flight request: {ctx.method} {ctx.path}
-  Request ID: {ctx.request_id}
-  Blocked: {ctx.blocking_count} time(s), {ctx.total_blocking_ms:.1f}ms total
-
-  Blocking was detected while this request was in flight. The culprit
-  may be this request or any other concurrent request.
-  ALL requests were frozen while the event loop was blocked.
-
-  Common fixes:
-    time.sleep(n)       -> await asyncio.sleep(n)
-    requests.get(url)   -> await httpx.AsyncClient().get(url)
-    open(f).read()      -> await aiofiles.open(f)
-    subprocess.run(...) -> await asyncio.create_subprocess_exec(...)
-
-  Docs: https://fastapi.tiangolo.com/async/
-{"=" * 72}
-"""
-        print(warning, file=sys.stderr)
+        print(
+            _format_console_warning(ctx, _console_supports_color()),
+            file=sys.stderr,
+        )
 
     def _generate_error_html(self, ctx: RequestContext) -> str:
         """Generate educational HTML error page for strict mode."""
@@ -417,7 +463,7 @@ class LoopGuardMiddleware:
         <h2>Common Causes & Fixes</h2>
 
         <div class="bad-label">BAD - These block the event loop:</div>
-        <div class="code-block bad">
+        <pre class="code-block bad">
 <span class="comment"># Sleeping</span>
 time.sleep(1)
 
@@ -428,11 +474,10 @@ requests.get("https://api.example.com")
 open("data.json").read()
 
 <span class="comment"># Subprocess</span>
-subprocess.run(["ls", "-la"])
-        </div>
+subprocess.run(["ls", "-la"])</pre>
 
         <div class="good-label">GOOD - Use async alternatives:</div>
-        <div class="code-block good">
+        <pre class="code-block good">
 <span class="comment"># Sleeping</span>
 await asyncio.sleep(1)
 
@@ -446,8 +491,7 @@ async with aiofiles.open("data.json") as f:
 
 <span class="comment"># Subprocess</span>
 proc = await asyncio.create_subprocess_exec("ls", "-la")
-await proc.wait()
-        </div>
+await proc.wait()</pre>
 
         <h2>Quick Fixes</h2>
         <ul>

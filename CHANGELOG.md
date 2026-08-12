@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The console blocking banner is restyled: a slim rule frame instead of
+  the `=`/`!` walls, with ANSI color hierarchy (headline red, explanation
+  dim, fixes cyan) on real terminals. Redirected streams and `NO_COLOR`
+  environments get identical plain text, so log grep patterns keep
+  working. (#9)
+- The 503 page's BAD/GOOD code examples render each snippet on its own
+  line again: the blocks are now `<pre>` elements; the previous `<div>`s
+  collapsed the newlines. (#10)
+
 ## 0.6.0 (2026-08-12)
 
 Detection-core hardening plus the AI test harness. Fixes found by a
