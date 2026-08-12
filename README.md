@@ -88,6 +88,21 @@ Writes structured logs listing the requests that were in flight:
 
 ---
 
+## Testing AI-Generated Code
+
+AI agents write plausible async code that quietly blocks the event loop. The bundled pytest plugin turns that into a red test and a machine-readable report the agent can fix from — no per-test annotations:
+
+```ini
+# pytest.ini
+[pytest]
+loopguard_all_async = true          # every async test fails on blocking
+loopguard_report = loopguard.json   # verdicts + fix hints for the agent
+```
+
+See [docs/AI-HARNESS.md](docs/AI-HARNESS.md) for the report schema, the `no_blocking` / `allow_blocking` markers, and a drop-in snippet for your project's agent instructions.
+
+---
+
 <p align="center">
   <a href="docs/CONFIGURATION.md"><strong>Full Configuration Reference</strong></a>
 </p>
