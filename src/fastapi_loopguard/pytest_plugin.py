@@ -111,9 +111,16 @@ class BlockingDetector:
         self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        """Start the blocking detector."""
+        """Start the blocking detector.
+
+        Yields once so the monitor task reaches its first sleep before the
+        caller continues: without this, a test that blocks before its first
+        real await (an ASGI request dispatch does exactly that) blocks an
+        unarmed sentinel and is never measured.
+        """
         self._running = True
         self._task = asyncio.create_task(self._monitor())
+        await asyncio.sleep(0)
 
     async def stop(self) -> None:
         """Stop the blocking detector.
@@ -205,21 +212,22 @@ def pytest_runtest_call(item: pytest.Item) -> None:
         try:
             result = await original_func(*args, **kwargs)
         finally:
+            # Record in the finally so a test that both blocks AND fails
+            # functionally still lands its "blocked" verdict in the report
             await detector.stop()
-
-        events = list(detector.blocking_events)
-        records = item.config.stash.setdefault(_REPORT_KEY, [])
-        records.append(
-            {
-                "nodeid": item.nodeid,
-                "verdict": "blocked" if events else "clean",
-                "events": [
-                    {"lag_ms": round(lag, 2), "threshold_ms": threshold}
-                    for lag in events
-                ],
-                "hints": _FIX_HINTS if events else [],
-            }
-        )
+            events = list(detector.blocking_events)
+            records = item.config.stash.setdefault(_REPORT_KEY, [])
+            records.append(
+                {
+                    "nodeid": item.nodeid,
+                    "verdict": "blocked" if events else "clean",
+                    "events": [
+                        {"lag_ms": round(lag, 2), "threshold_ms": threshold}
+                        for lag in events
+                    ],
+                    "hints": _FIX_HINTS if events else [],
+                }
+            )
 
         if events:
             max_lag = max(events)
