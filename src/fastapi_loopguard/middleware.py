@@ -104,11 +104,8 @@ class LoopGuardMiddleware:
 
         Intercepts lifespan messages to start/stop the monitor.
         """
-        started = False
-        shutdown_complete = False
 
         async def receive_wrapper() -> Message:
-            nonlocal started
             message = await receive()
 
             if message["type"] == "lifespan.startup":
@@ -116,13 +113,10 @@ class LoopGuardMiddleware:
                 if self._config.enabled and not self._started:
                     await self._start_monitor()
                 self._lazy_started = False
-                started = True
 
             return message
 
         async def send_wrapper(message: Message) -> None:
-            nonlocal shutdown_complete
-
             if message["type"] in (
                 "lifespan.startup.failed",
                 "lifespan.shutdown.complete",
@@ -131,11 +125,17 @@ class LoopGuardMiddleware:
                 # Stop monitor when the app shuts down OR fails to start;
                 # a failed startup must not leak the monitor tasks
                 await self._stop_monitor()
-                shutdown_complete = message["type"] == "lifespan.shutdown.complete"
 
             await send(message)
 
-        await self.app(scope, receive_wrapper, send_wrapper)
+        try:
+            await self.app(scope, receive_wrapper, send_wrapper)
+        except BaseException:
+            # A lifespan app that raises never sends a terminal message, so
+            # the send_wrapper cleanup above never runs — stop here or the
+            # monitor tasks outlive the app
+            await self._stop_monitor()
+            raise
 
     async def _start_monitor(self) -> None:
         """Start the sentinel monitor with background calibration."""
@@ -148,12 +148,19 @@ class LoopGuardMiddleware:
         self._started = True
 
     async def _stop_monitor(self) -> None:
-        """Stop the monitor and reset lifecycle state. Idempotent."""
-        if self._monitor:
-            await self._monitor.stop()
-            self._monitor = None
+        """Stop the monitor and reset lifecycle state. Idempotent.
+
+        Flags are cleared BEFORE awaiting the monitor's stop: that await
+        yields, and a request arriving mid-stop must observe _started=False
+        so it starts a fresh monitor instead of running unmonitored against
+        one that is about to die.
+        """
+        monitor = self._monitor
+        self._monitor = None
         self._started = False
         self._lazy_started = False
+        if monitor:
+            await monitor.stop()
 
     async def _handle_http(
         self,
@@ -630,14 +637,24 @@ await proc.wait()
                     # Don't send original response headers
                     return
 
-                # No blocking - add headers and pass through
+                # No blocking so far - add headers and pass through. Values
+                # come from the context, not literals: they reflect the state
+                # at header-send time. Blocking during a streaming body after
+                # this point cannot be reflected here (headers are on the
+                # wire) and is reported via logs only.
                 headers = list(message.get("headers", []))
                 headers.extend(
                     [
                         (b"x-request-id", ctx.request_id.encode()),
-                        (b"x-blocking-count", b"0"),
-                        (b"x-blocking-total-ms", b"0.00"),
-                        (b"x-blocking-detected", b"false"),
+                        (b"x-blocking-count", str(ctx.blocking_count).encode()),
+                        (
+                            b"x-blocking-total-ms",
+                            f"{ctx.total_blocking_ms:.2f}".encode(),
+                        ),
+                        (
+                            b"x-blocking-detected",
+                            b"true" if ctx.blocking_count > 0 else b"false",
+                        ),
                     ]
                 )
 

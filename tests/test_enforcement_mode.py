@@ -11,10 +11,12 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware
-from fastapi_loopguard.context import get_registry
+from fastapi_loopguard.context import get_active_requests, get_registry
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+
+    from starlette.types import Message, Receive, Scope, Send
 
 
 @pytest.fixture(autouse=True)
@@ -504,3 +506,84 @@ class TestEffectiveEnforcementMode:
                 )
                 middleware = LoopGuardMiddleware(app, config=config)
                 assert middleware._get_effective_enforcement_mode() == mode
+
+
+class TestStrictModeStreaming:
+    """Strict mode and responses whose headers are already on the wire."""
+
+    async def test_mid_stream_blocking_is_not_enforced(self) -> None:
+        """Blocking first observed mid-stream cannot fail the response.
+
+        Headers went out with the first chunk; the 200 and the
+        x-blocking-detected: false header reflect the state at that moment.
+        Documents the streaming limitation recorded in FINDINGS.md — the
+        stall is reported via logs only.
+        """
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent: list[Message] = []
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send(
+                {"type": "http.response.body", "body": b"chunk1", "more_body": True}
+            )
+            # A stall observed while the body streams
+            ctx = next(iter(get_active_requests()))
+            ctx.record_blocking(100.0)
+            await send(
+                {"type": "http.response.body", "body": b"chunk2", "more_body": False}
+            )
+
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope: Scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/stream",
+            "headers": [],
+        }
+        await middleware(scope, receive, send)
+
+        assert sent[0]["type"] == "http.response.start"
+        assert sent[0]["status"] == 200
+        headers = dict(sent[0]["headers"])
+        assert headers[b"x-blocking-detected"] == b"false"
+        bodies = [m for m in sent if m["type"] == "http.response.body"]
+        assert len(bodies) == 2  # both chunks forwarded; no 503 replaced them
+
+    async def test_app_exception_after_swallowed_start_loses_503(self) -> None:
+        """Documents accepted behavior (FINDINGS.md): the exception wins.
+
+        When strict mode has swallowed the app's response start and the app
+        then raises, the exception propagates: the client gets the server's
+        500, not LoopGuard's 503, and nothing is sent from here.
+        """
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent: list[Message] = []
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            ctx = next(iter(get_active_requests()))
+            ctx.record_blocking(100.0)
+            # Swallowed by strict mode (blocking already recorded)
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            raise RuntimeError("handler exploded")
+
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope: Scope = {"type": "http", "method": "GET", "path": "/boom", "headers": []}
+        with pytest.raises(RuntimeError, match="handler exploded"):
+            await middleware(scope, receive, send)
+
+        assert sent == []  # neither the app's 200 nor a LoopGuard 503

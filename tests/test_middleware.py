@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from starlette.types import Message, Receive, Scope, Send
 from starlette.websockets import WebSocket
 
-from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware
+from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware, SentinelMonitor
 from fastapi_loopguard.context import get_registry
 
 
@@ -859,3 +859,98 @@ class TestScopeState:
 
         assert response.status_code == 200
         assert response.json()["has_request_id"] is True
+
+
+class TestLazyStopRace:
+    """A request arriving while a lazy stop is in flight must be monitored."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_registry(self) -> None:
+        get_registry().clear()
+
+    async def test_request_arriving_mid_stop_gets_fresh_monitor(self) -> None:
+        config = LoopGuardConfig(log_blocking_events=False)
+        observed: dict[str, object] = {}
+
+        async def inner_app(scope: Scope, receive: Receive, send: Send) -> None:
+            observed["monitor"] = middleware._monitor
+            monitor = middleware._monitor
+            observed["running"] = monitor.is_running if monitor else False
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+        middleware = LoopGuardMiddleware(inner_app, config=config)
+
+        release = asyncio.Event()
+        entered = asyncio.Event()
+
+        class _SlowStopMonitor:
+            is_running = False
+
+            async def stop(self) -> None:
+                entered.set()
+                await release.wait()
+
+        middleware._monitor = _SlowStopMonitor()  # type: ignore[assignment]
+        middleware._started = True
+        middleware._lazy_started = True
+
+        stop_task = asyncio.create_task(middleware._stop_monitor())
+        await entered.wait()
+
+        # Flags must be cleared BEFORE the await inside _stop_monitor; the
+        # old ordering left _started=True here and the request below would
+        # have run unmonitored against a dying monitor
+        assert middleware._started is False
+        assert middleware._monitor is None
+        assert middleware._lazy_started is False
+
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope: Scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+        await middleware(scope, receive, send)
+
+        release.set()
+        await stop_task
+
+        monitor = observed["monitor"]
+        assert isinstance(monitor, SentinelMonitor)
+        assert observed["running"] is True
+        assert sent[0]["status"] == 200
+
+
+class TestLifespanExceptionCleanup:
+    """A lifespan app that raises must not leak the monitor tasks."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_registry(self) -> None:
+        get_registry().clear()
+
+    async def test_lifespan_app_exception_stops_monitor(self) -> None:
+        config = LoopGuardConfig(log_blocking_events=False)
+
+        async def failing_app(scope: Scope, receive: Receive, send: Send) -> None:
+            await receive()  # consumes lifespan.startup -> monitor starts
+            raise RuntimeError("startup exploded")
+
+        middleware = LoopGuardMiddleware(failing_app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "lifespan.startup"}
+
+        async def send(message: Message) -> None:
+            pass
+
+        scope: Scope = {"type": "lifespan"}
+        with pytest.raises(RuntimeError, match="startup exploded"):
+            await middleware(scope, receive, send)
+
+        assert middleware._started is False
+        assert middleware._monitor is None
+        assert _live_loopguard_tasks() == []

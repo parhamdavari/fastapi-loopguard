@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from collections import deque
 from collections.abc import Callable
@@ -31,6 +30,7 @@ class AdaptiveThreshold:
         "_percentile",
         "_multiplier",
         "_min_threshold_ms",
+        "_max_threshold_ms",
         "_min_samples",
         "_current_threshold_ms",
     )
@@ -42,6 +42,7 @@ class AdaptiveThreshold:
         multiplier: float,
         min_threshold_ms: float,
         min_samples: int,
+        max_threshold_ms: float,
     ) -> None:
         """Initialize the adaptive threshold.
 
@@ -51,12 +52,16 @@ class AdaptiveThreshold:
             multiplier: Threshold = baseline × multiplier.
             min_threshold_ms: Minimum threshold value.
             min_samples: Minimum samples before adapting.
+            max_threshold_ms: Hard ceiling; adaptation may never raise the
+                threshold above it. Without a ceiling the censor gate widens
+                with every raise and the threshold ratchets upward unboundedly.
         """
         self._samples: deque[float] = deque(maxlen=window_size)
         self._window_size = window_size
         self._percentile = percentile
         self._multiplier = multiplier
         self._min_threshold_ms = min_threshold_ms
+        self._max_threshold_ms = max_threshold_ms
         self._min_samples = min_samples
         self._current_threshold_ms = min_threshold_ms
 
@@ -102,9 +107,16 @@ class AdaptiveThreshold:
         idx = min(idx, len(sorted_samples) - 1)  # Bounds check
         baseline = sorted_samples[idx]
 
-        self._current_threshold_ms = max(
-            baseline * self._multiplier,
-            self._min_threshold_ms,
+        # Clamp to [floor, ceiling]: the ceiling stops the feedback loop where
+        # a raised threshold widens the censor gate, which admits larger
+        # samples, which raises the threshold again (measured compounding
+        # 50 -> 241 -> 573ms on merely-noisy traffic without it)
+        self._current_threshold_ms = min(
+            max(
+                baseline * self._multiplier,
+                self._min_threshold_ms,
+            ),
+            self._max_threshold_ms,
         )
         return self._current_threshold_ms
 
@@ -170,11 +182,17 @@ class SentinelMonitor:
                 multiplier=config.threshold_multiplier,
                 min_threshold_ms=config.fallback_threshold_ms,
                 min_samples=config.adaptive_min_samples,
+                max_threshold_ms=config.fallback_threshold_ms,
             )
         else:
             self._adaptive = None
         self._last_adapt_time: float = 0.0
-        self._lag_history: deque[tuple[float, float]] = deque()
+        # Safety cap: twice the ticks a full window can hold, so a stalled
+        # prune (or a huge configured window) cannot grow the deque unboundedly
+        history_cap = max(
+            2, int(config.cumulative_window_ms / config.monitor_interval_ms) * 2
+        )
+        self._lag_history: deque[tuple[float, float]] = deque(maxlen=history_cap)
 
     @property
     def is_running(self) -> bool:
@@ -219,8 +237,10 @@ class SentinelMonitor:
             lag_ms = (elapsed - interval_sec) * 1000.0
             samples.append(lag_ms)
 
-        # Idle floor: the minimum lag is the least contaminated sample
-        self._baseline_ms = min(samples)
+        # Idle floor: the minimum lag is the least contaminated sample.
+        # Clamped at 0: a timer may fire up to clock_resolution early, which
+        # would otherwise report a (meaningless) negative baseline.
+        self._baseline_ms = max(0.0, min(samples))
 
         # Floor at the sampling interval (lag below it cannot be resolved),
         # ceiling at the fallback (calibration may only ever lower it)
@@ -301,33 +321,45 @@ class SentinelMonitor:
                     self._handle_blocking(lag_ms)
                     triggered = True
 
-                # Cumulative blocking detection
                 if self._config.cumulative_blocking_enabled:
-                    now = loop.time()
-                    # A sample consumed by the single-shot detection above is
-                    # not re-counted toward the cumulative window
-                    if not triggered:
-                        self._lag_history.append((now, lag_ms))
-
-                    # Prune old samples
-                    window_start = now - (self._config.cumulative_window_ms / 1000.0)
-                    while self._lag_history and self._lag_history[0][0] < window_start:
-                        self._lag_history.popleft()
-
-                    # Calculate total lag in window
-                    cumulative_lag = sum(lag for _, lag in self._lag_history)
-
-                    if (
-                        cumulative_lag > self._config.cumulative_blocking_threshold_ms
-                        and not triggered
-                    ):
-                        self._handle_blocking(cumulative_lag, is_cumulative=True)
-                        # Clear history to avoid repeated triggering for the same window
-                        self._lag_history.clear()
+                    self._check_cumulative(loop.time(), lag_ms, triggered)
             except Exception:
                 logger.exception("Error in LoopGuard monitor loop")
                 # Wait a bit before retrying to avoid tight loop on persistent error
-                await asyncio.sleep(1.0)
+                try:
+                    await asyncio.sleep(1.0)
+                except RuntimeError:
+                    # The event loop is closing; nothing left to monitor. Bail
+                    # out instead of dying with an unretrieved exception.
+                    return
+
+    def _check_cumulative(self, now: float, lag_ms: float, triggered: bool) -> None:
+        """Track baseline-corrected lag and fire once per saturated window.
+
+        Only lag in excess of the calibrated baseline is admitted: raw lag
+        includes platform timer jitter, and at defaults (~100 ticks per
+        window) a ~2ms per-tick floor alone would sum past the cumulative
+        threshold on a completely idle loop.
+        """
+        # A sample consumed by the single-shot detection is not re-counted
+        # toward the cumulative window
+        if not triggered:
+            excess_ms = max(0.0, lag_ms - self._baseline_ms)
+            self._lag_history.append((now, excess_ms))
+
+        # Prune samples older than the window
+        window_start = now - (self._config.cumulative_window_ms / 1000.0)
+        while self._lag_history and self._lag_history[0][0] < window_start:
+            self._lag_history.popleft()
+
+        if triggered:
+            return
+
+        cumulative_lag = sum(lag for _, lag in self._lag_history)
+        if cumulative_lag > self._config.cumulative_blocking_threshold_ms:
+            self._handle_blocking(cumulative_lag, is_cumulative=True)
+            # Clear history so one window reports at most once
+            self._lag_history.clear()
 
     def _handle_blocking(self, lag_ms: float, is_cumulative: bool = False) -> None:
         """Handle a detected blocking event.
@@ -358,18 +390,20 @@ class SentinelMonitor:
         for ctx in active_contexts:
             ctx.record_blocking(lag_ms, cumulative=is_cumulative)
 
-            if self._config.log_blocking_events:
-                logger.warning(
-                    "%s for %.2fms during %s %s (request_id=%s)",
-                    msg_type,
-                    lag_ms,
-                    ctx.method,
-                    ctx.path,
-                    ctx.request_id,
-                )
-
             if self._on_blocking:
                 self._on_blocking(lag_ms, ctx.path, ctx.method)
+
+        # One summary line per event, not one per context: this runs on the
+        # loop thread right after a stall, and O(N) log formatting under
+        # concurrency would pile more work onto an already-late loop
+        if self._config.log_blocking_events:
+            logger.warning(
+                "%s for %.2fms across %d in-flight request(s): %s",
+                msg_type,
+                lag_ms,
+                len(active_contexts),
+                ",".join(ctx.request_id for ctx in active_contexts),
+            )
 
     async def start_with_background_calibration(self) -> None:
         """Start monitoring immediately with background calibration.
@@ -409,10 +443,20 @@ class SentinelMonitor:
         if self._running:
             return
 
-        if not self._calibrated:
-            await self.calibrate()
-
+        # Mark running before the (blocking) calibration so a stop() issued
+        # while calibration runs is observed and vetoes the loop start
         self._running = True
+        try:
+            if not self._calibrated:
+                await self.calibrate()
+        except BaseException:
+            self._running = False
+            raise
+
+        if not self._running:
+            # stop() ran during calibration
+            return
+
         self._task = asyncio.create_task(
             self._monitor_loop(),
             name="loopguard-monitor",
@@ -427,17 +471,33 @@ class SentinelMonitor:
         self._running = False
 
         # Cancel calibration if still running
-        if self._calibration_task and not self._calibration_task.done():
-            self._calibration_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._calibration_task
-            self._calibration_task = None
+        calibration_task = self._calibration_task
+        self._calibration_task = None
+        if calibration_task and not calibration_task.done():
+            await self._cancel_and_wait(calibration_task)
 
         # Cancel monitoring task
-        if self._task:
-            self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._task
-            self._task = None
+        task = self._task
+        self._task = None
+        if task:
+            await self._cancel_and_wait(task)
 
         logger.info("LoopGuard sentinel stopped")
+
+    @staticmethod
+    async def _cancel_and_wait(task: asyncio.Task[None]) -> None:
+        """Cancel a task and await it without eating our own cancellation.
+
+        A plain suppress(CancelledError) around the await also swallows a
+        cancellation aimed at the *calling* task — stop() runs inside request
+        finally blocks, so that would turn a client disconnect or server
+        shutdown into a request that ignores its own cancellation. Re-raise
+        when the current task has a cancellation pending.
+        """
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise

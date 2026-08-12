@@ -16,7 +16,6 @@ Usage:
     # Or with custom config
     config = LoopGuardConfig(
         dev_mode=True,  # Enable X-Blocking-* headers
-        prometheus_enabled=True,  # Enable Prometheus metrics
     )
     app.add_middleware(LoopGuardMiddleware, config=config)
 
