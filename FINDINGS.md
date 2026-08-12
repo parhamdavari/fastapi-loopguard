@@ -1,21 +1,24 @@
-# Findings not fixed in the 0.5 pass
+# Findings not fixed in the 0.5/0.6 passes
 
-Everything noticed while fixing the 0.5 correctness defects but deliberately
-left alone. Each item is its own future task.
+Everything noticed while fixing the 0.5 correctness defects (and the 0.6
+hardening pass) but deliberately left alone. Each item is its own future task.
 
 ## Detection design
 
-1. **Sub-threshold noise can still inflate the adaptive threshold.**
-   The 0.5 fix censors detected-blocking samples out of the window, but
-   samples just below the threshold are admitted by design, and
-   `P95 x threshold_multiplier` of ~40ms noise still produces a ~230ms
-   threshold that would mask a later 100ms block. Per the forensics guidance,
-   median+MAD over the censored window would be more robust than a percentile.
+1. ~~**Sub-threshold noise can still inflate the adaptive threshold.**~~
+   **Fixed in the 0.6 pass:** the adaptive threshold is now clamped to the
+   `fallback_threshold_ms` ceiling, closing both the one-step inflation and
+   the compounding ratchet (each raise widened the censor gate). Median+MAD
+   over the censored window remains a possible refinement below the ceiling.
 
 2. **Strict mode cannot fail a response after `http.response.start` has passed.**
    If blocking is first detected mid-stream, the 200 and its headers are
    already on the wire and the body keeps streaming; the response then claims
-   no blocking. Inherent to header-based reporting; worth documenting.
+   no blocking. Inherent to header-based reporting. Documented by test
+   (`test_enforcement_mode.py::TestStrictModeStreaming`). Related accepted
+   behavior, also documented by test: if the app raises after strict mode
+   swallowed its `http.response.start`, the exception wins — the client gets
+   the server's 500, not LoopGuard's 503.
 
 3. **Explicit strict mode still 503s all in-flight requests.**
    The sentinel cannot name the culprit, so strict mode punishes bystanders
@@ -59,11 +62,12 @@ left alone. Each item is its own future task.
 11. **`docs/CONFIGURATION.md` names metrics that do not exist** (known gap #2)
     and `get_metrics()` can never find an instance (known gap #3).
 
-12. **`docs/CONFIGURATION.md` describes `fallback_threshold_ms` as "Used if
-    calibration is unreliable"**; since 0.5 it is also the hard ceiling for
-    the calibrated threshold.
+12. ~~**`docs/CONFIGURATION.md` describes `fallback_threshold_ms` as "Used if
+    calibration is unreliable"**~~ — fixed in the 0.6 pass; the docs now
+    describe it as the hard ceiling.
 
-13. **`_handle_lifespan` locals `started` / `shutdown_complete` are write-only.**
+13. ~~**`_handle_lifespan` locals `started` / `shutdown_complete` are
+    write-only.**~~ — removed in the 0.6 pass.
 
 14. **The `structlog` extra is declared but nothing imports structlog**
     (already noted in CLAUDE.md).
@@ -74,6 +78,23 @@ left alone. Each item is its own future task.
     calibration window.** With idle gaps, clean tail samples dominated and the
     old `max(..., fallback)` floor masked the bug. The fix removes the
     mechanism either way, but tests that "prove" poisoning need dense blocking.
+
+## Accepted in the 0.6 hardening pass (documented, not fixed)
+
+16. **Installing the middleware twice injects duplicate `x-*` headers.**
+    Nothing marks a scope as already instrumented; two instances register two
+    contexts per request and both send wrappers extend the headers. Low
+    priority — a doubled middleware is a user configuration error.
+
+17. **`Accept` negotiation is a bare substring test with last-header-wins.**
+    Duplicate `Accept` headers collapse via `dict()`, and q-values are
+    ignored, so `text/html;q=0.1, application/json;q=0.9` still gets the HTML
+    page. Cosmetic: only chooses the error-page format.
+
+18. **8-hex-char request ids (32 bits) can collide silently.** A collision
+    overwrites the registry entry and the first unregister removes the second
+    request's context. Birthday bound is ~77k concurrent in-flight requests;
+    accepted as unrealistic, noted here so it is a known trade.
 
 ## Fixed since the first draft
 

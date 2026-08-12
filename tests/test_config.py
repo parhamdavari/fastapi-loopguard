@@ -133,3 +133,28 @@ class TestLoopGuardConfig:
             ValueError, match="adaptive_update_interval_ms must be positive"
         ):
             LoopGuardConfig(adaptive_update_interval_ms=0)
+
+
+class TestCrossFieldValidation:
+    """Cross-field rules that keep the detector's clamps coherent."""
+
+    def test_fallback_below_interval_rejected(self) -> None:
+        """Lag below the sampling interval cannot be resolved."""
+        with pytest.raises(ValueError, match="fallback_threshold_ms"):
+            LoopGuardConfig(monitor_interval_ms=100.0, fallback_threshold_ms=50.0)
+
+    def test_fallback_equal_to_interval_allowed(self) -> None:
+        config = LoopGuardConfig(monitor_interval_ms=50.0, fallback_threshold_ms=50.0)
+        assert config.fallback_threshold_ms == 50.0
+
+    def test_adaptive_update_interval_below_monitor_interval_rejected(self) -> None:
+        with pytest.raises(ValueError, match="adaptive_update_interval_ms"):
+            LoopGuardConfig(
+                monitor_interval_ms=10.0,
+                adaptive_update_interval_ms=5.0,
+            )
+
+    def test_exclude_paths_bare_string_rejected(self) -> None:
+        """A bare string would silently become a substring match."""
+        with pytest.raises(ValueError, match="exclude_paths"):
+            LoopGuardConfig(exclude_paths="/health")  # type: ignore[arg-type]

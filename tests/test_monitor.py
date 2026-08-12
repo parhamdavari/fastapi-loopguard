@@ -236,6 +236,7 @@ class TestAdaptiveThreshold:
             multiplier=5.0,
             min_threshold_ms=50.0,
             min_samples=100,
+            max_threshold_ms=10_000.0,
         )
 
         assert adaptive.current_threshold_ms == 50.0
@@ -249,6 +250,7 @@ class TestAdaptiveThreshold:
             multiplier=5.0,
             min_threshold_ms=10.0,
             min_samples=10,
+            max_threshold_ms=10_000.0,
         )
 
         for i in range(50):
@@ -264,6 +266,7 @@ class TestAdaptiveThreshold:
             multiplier=5.0,
             min_threshold_ms=10.0,
             min_samples=10,
+            max_threshold_ms=10_000.0,
         )
 
         # Add more samples than window size
@@ -281,6 +284,7 @@ class TestAdaptiveThreshold:
             multiplier=5.0,
             min_threshold_ms=50.0,
             min_samples=100,
+            max_threshold_ms=10_000.0,
         )
 
         # Add fewer samples than min_samples
@@ -298,6 +302,7 @@ class TestAdaptiveThreshold:
             multiplier=5.0,
             min_threshold_ms=10.0,
             min_samples=100,
+            max_threshold_ms=10_000.0,
         )
 
         # Add 100 samples with values 0-99
@@ -317,6 +322,7 @@ class TestAdaptiveThreshold:
             multiplier=5.0,
             min_threshold_ms=100.0,
             min_samples=10,
+            max_threshold_ms=10_000.0,
         )
 
         # Add low values that would produce threshold < min
@@ -421,6 +427,7 @@ class TestSentinelMonitorAdaptive:
             multiplier=5.0,
             min_threshold_ms=50.0,
             min_samples=10,
+            max_threshold_ms=10_000.0,
         )
 
         adaptive.set_min_threshold(10.0)
@@ -744,23 +751,39 @@ class TestCalibrationEdgeCases:
 
         await monitor.stop()
 
-    async def test_calibration_fallback_ceiling_beats_interval_floor(self) -> None:
-        """The fallback ceiling is absolute, even below the interval floor."""
+    async def test_fallback_below_interval_is_rejected(self) -> None:
+        """A fallback under the sampling interval cannot be configured.
+
+        Lag below the interval cannot be resolved; such a config used to
+        invert the calibration clamp and produce a threshold that fired on
+        every tick, so it is now a validation error.
+        """
+        with pytest.raises(ValueError, match="fallback_threshold_ms"):
+            LoopGuardConfig(
+                monitor_interval_ms=1.0,
+                calibration_iterations=20,
+                threshold_multiplier=5.0,
+                fallback_threshold_ms=0.1,  # Below the interval floor
+                log_blocking_events=False,
+            )
+
+    async def test_calibrate_baseline_never_negative(self) -> None:
+        """The reported baseline is clamped at zero.
+
+        Timers may fire up to clock_resolution early, producing a negative
+        raw minimum sample.
+        """
         config = LoopGuardConfig(
-            monitor_interval_ms=1.0,  # Very fast
+            monitor_interval_ms=1.0,
             calibration_iterations=20,
-            threshold_multiplier=5.0,
-            fallback_threshold_ms=0.1,  # Below the interval floor
+            fallback_threshold_ms=30.0,
             log_blocking_events=False,
         )
         monitor = SentinelMonitor(config)
 
         await monitor.calibrate()
 
-        # Baseline is the idle floor (min sample), never negative
-        assert monitor.baseline_ms >= 0
-        # The fallback remains a hard ceiling
-        assert monitor.threshold_ms == config.fallback_threshold_ms
+        assert monitor.baseline_ms >= 0.0
 
 
 class TestTaskCancellation:
@@ -866,6 +889,7 @@ class TestAdaptiveThresholdEdgeCases:
             multiplier=5.0,
             min_threshold_ms=10.0,
             min_samples=5,
+            max_threshold_ms=10_000.0,
         )
 
         # Add exactly window_size samples
@@ -884,6 +908,7 @@ class TestAdaptiveThresholdEdgeCases:
             multiplier=5.0,
             min_threshold_ms=1.0,
             min_samples=10,
+            max_threshold_ms=10_000.0,
         )
 
         # Add identical samples
@@ -902,6 +927,7 @@ class TestAdaptiveThresholdEdgeCases:
             multiplier=5.0,
             min_threshold_ms=1.0,
             min_samples=10,
+            max_threshold_ms=10_000.0,
         )
 
         # Add mostly low values with one high outlier
@@ -913,3 +939,227 @@ class TestAdaptiveThresholdEdgeCases:
         # P95 should be around 1.0 (outlier is above P95)
         # So threshold = 1.0 × 5 = 5.0
         assert result < 100  # Should not be dominated by outlier
+
+
+class TestAdaptiveCeilingRegression:
+    """Adaptation may never raise the threshold above the fallback ceiling."""
+
+    def test_recalculate_clamps_to_ceiling(self) -> None:
+        """A percentile far above the ceiling is clamped to it."""
+        adaptive = AdaptiveThreshold(
+            window_size=1000,
+            percentile=0.95,
+            multiplier=5.0,
+            min_threshold_ms=50.0,
+            min_samples=100,
+            max_threshold_ms=50.0,
+        )
+
+        for i in range(200):
+            adaptive.add_sample(float((i * 7) % 120))
+
+        assert adaptive.recalculate() == 50.0
+
+    def test_censored_feedback_cannot_ratchet_threshold(self) -> None:
+        """Emulate the monitor's censor gate over several adapt rounds.
+
+        Without a ceiling, each raise widens the gate that admits the next
+        round of samples, and the threshold compounds upward unboundedly
+        (measured 50 -> 241 -> 573ms on noisy sub-threshold traffic).
+        """
+        fallback = 50.0
+        adaptive = AdaptiveThreshold(
+            window_size=1000,
+            percentile=0.95,
+            multiplier=5.0,
+            min_threshold_ms=fallback,
+            min_samples=100,
+            max_threshold_ms=fallback,
+        )
+
+        threshold = fallback
+        for _ in range(5):
+            for i in range(300):
+                lag = float((i * 7) % 120)  # noisy, mostly sub-threshold traffic
+                if lag < threshold:  # the monitor's censor gate
+                    adaptive.add_sample(lag)
+            threshold = adaptive.recalculate()
+            assert threshold <= fallback
+
+    def test_monitor_wires_fallback_as_adaptive_ceiling(self) -> None:
+        """SentinelMonitor passes the fallback as the adaptive ceiling."""
+        config = LoopGuardConfig(adaptive_threshold=True, log_blocking_events=False)
+        monitor = SentinelMonitor(config)
+
+        assert monitor._adaptive is not None
+        assert monitor._adaptive._max_threshold_ms == config.fallback_threshold_ms
+
+
+class TestCumulativeBaselineCorrection:
+    """Cumulative detection sums baseline-corrected lag, not raw lag."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    def _monitor_with_events(self) -> tuple[SentinelMonitor, list[float]]:
+        config = LoopGuardConfig(
+            monitor_interval_ms=10.0,
+            fallback_threshold_ms=50.0,
+            cumulative_blocking_threshold_ms=200.0,
+            cumulative_window_ms=1000.0,
+            log_blocking_events=False,
+        )
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        return SentinelMonitor(config, on_blocking=on_blocking), events
+
+    def test_baseline_jitter_never_fires(self) -> None:
+        """Per-tick timer jitter at the baseline must not accumulate.
+
+        With raw-lag summing, 2.5ms of jitter per 10ms tick crosses the
+        200ms default threshold within a single 1000ms window on a loop
+        that is completely idle.
+        """
+        monitor, events = self._monitor_with_events()
+        monitor._baseline_ms = 2.5
+
+        for i in range(300):
+            monitor._check_cumulative(now=i * 0.01, lag_ms=2.5, triggered=False)
+
+        assert events == []
+
+    def test_excess_lag_fires_and_window_clears(self) -> None:
+        """Lag above the baseline accumulates; each fire resets the window."""
+        monitor, events = self._monitor_with_events()
+        monitor._baseline_ms = 2.5
+
+        # 5.0ms of excess per tick: crosses 200ms after 41 admitted ticks,
+        # clears, then crosses again 41 ticks later
+        for i in range(100):
+            monitor._check_cumulative(now=i * 0.01, lag_ms=7.5, triggered=False)
+
+        assert len(events) == 2
+
+        # The window was cleared on the last fire: one more tick cannot re-fire
+        monitor._check_cumulative(now=1.0, lag_ms=7.5, triggered=False)
+        assert len(events) == 2
+
+    def test_triggered_tick_not_double_counted(self) -> None:
+        """A tick consumed by single-shot detection never enters the window."""
+        monitor, events = self._monitor_with_events()
+
+        monitor._check_cumulative(now=0.0, lag_ms=500.0, triggered=True)
+
+        assert events == []
+        assert len(monitor._lag_history) == 0
+
+
+class TestStopCancellationSafety:
+    """stop() must not eat a cancellation aimed at the calling task."""
+
+    async def test_cancel_and_wait_preserves_caller_cancellation(self) -> None:
+        """A caller cancelled while awaiting the child ends up cancelled."""
+
+        async def stubborn() -> None:
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)  # slow shutdown widens the window
+                raise
+
+        victim = asyncio.create_task(stubborn())
+        await asyncio.sleep(0)
+        entered = asyncio.Event()
+
+        async def caller() -> None:
+            entered.set()
+            await SentinelMonitor._cancel_and_wait(victim)
+
+        caller_task = asyncio.create_task(caller())
+        await entered.wait()
+        await asyncio.sleep(0.05)  # caller is now inside `await task`
+
+        caller_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller_task
+
+        assert caller_task.cancelled()
+
+    async def test_cancel_and_wait_swallows_child_cancellation(self) -> None:
+        """The child's own cancellation is absorbed, not re-raised."""
+
+        async def child() -> None:
+            await asyncio.sleep(10)
+
+        task = asyncio.create_task(child())
+        await asyncio.sleep(0)
+
+        await SentinelMonitor._cancel_and_wait(task)
+
+        assert task.cancelled()
+
+
+class TestStopDuringBlockingCalibration:
+    """stop() issued during a blocking start() must veto the loop start."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    async def test_stop_during_calibration_vetoes_start(self) -> None:
+        config = LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            calibration_iterations=20,  # ~100ms of calibration
+            fallback_threshold_ms=30.0,
+            log_blocking_events=False,
+        )
+        monitor = SentinelMonitor(config)
+
+        start_task = asyncio.create_task(monitor.start())
+        await asyncio.sleep(0.02)  # start() is inside calibrate()
+        assert monitor.is_running  # visible to stop() during calibration
+
+        await monitor.stop()
+        await start_task
+
+        assert not monitor.is_running
+        assert monitor._task is None
+
+
+class TestSingleLogLinePerEvent:
+    """One blocking event produces one log line, however many requests fly."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    def test_one_warning_line_for_many_contexts(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        config = LoopGuardConfig(log_blocking_events=True)
+        monitor = SentinelMonitor(config)
+
+        contexts = [
+            RequestContext(request_id=f"req0000{i}", path=f"/r{i}", method="GET")
+            for i in range(3)
+        ]
+        for ctx in contexts:
+            register_request(ctx)
+
+        with caplog.at_level(logging.WARNING, logger="fastapi_loopguard"):
+            monitor._handle_blocking(100.0)
+
+        records = [r for r in caplog.records if "Event loop blocked" in r.getMessage()]
+        assert len(records) == 1
+        message = records[0].getMessage()
+        assert "3 in-flight" in message
+        for ctx in contexts:
+            assert ctx.request_id in message
+            assert ctx.blocking_count == 1

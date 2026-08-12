@@ -65,6 +65,12 @@ class LoopGuardConfig:
             raise ValueError("calibration_iterations must be at least 10")
         if self.fallback_threshold_ms <= 0:
             raise ValueError("fallback_threshold_ms must be positive")
+        if self.fallback_threshold_ms < self.monitor_interval_ms:
+            # Lag below the sampling interval cannot be resolved; a fallback
+            # under it would invert the calibration clamp and fire every tick
+            raise ValueError(
+                "fallback_threshold_ms cannot be less than monitor_interval_ms"
+            )
         # Adaptive threshold validation
         if self.adaptive_window_size < 100:
             raise ValueError("adaptive_window_size must be at least 100")
@@ -78,6 +84,10 @@ class LoopGuardConfig:
             )
         if self.adaptive_update_interval_ms <= 0:
             raise ValueError("adaptive_update_interval_ms must be positive")
+        if self.adaptive_update_interval_ms < self.monitor_interval_ms:
+            raise ValueError(
+                "adaptive_update_interval_ms cannot be less than monitor_interval_ms"
+            )
         # Cumulative blocking validation
         if self.cumulative_blocking_threshold_ms <= 0:
             raise ValueError("cumulative_blocking_threshold_ms must be positive")
@@ -89,6 +99,12 @@ class LoopGuardConfig:
         ):
             raise ValueError(
                 "cumulative_window_ms cannot be less than monitor_interval_ms"
+            )
+        # exclude_paths validation: a bare string is iterable, which would
+        # silently turn the membership test into a substring match
+        if isinstance(self.exclude_paths, str):
+            raise ValueError(
+                "exclude_paths must be a collection of paths, not a string"
             )
         # Enforcement mode validation
         valid_enforcement_modes = {"log", "warn", "strict"}

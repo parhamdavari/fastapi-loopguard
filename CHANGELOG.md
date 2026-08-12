@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+Detection-core hardening. Fixes found by a line-by-line audit of the
+detection path; every item below changes observable behavior.
+
+- The adaptive threshold can no longer ratchet itself blind. Recalculation
+  is clamped to the `fallback_threshold_ms` ceiling; previously each raise
+  widened the censor gate that admits the next round of samples, compounding
+  50 -> 241 -> 573ms within seconds on merely-noisy traffic.
+- Cumulative detection no longer counts timer jitter. The window now sums
+  baseline-corrected excess lag (`max(0, lag - baseline)`); raw per-tick
+  platform jitter (~2ms idle on macOS) alone could previously cross the
+  200ms default within one 1000ms window on a completely idle loop.
+- Lazy stop/start race fixed: a request arriving while the monitor was
+  stopping (last request just finished) used to observe stale lifecycle
+  flags and run unmonitored. Flags are now cleared before the stop awaits,
+  so a mid-stop request starts a fresh monitor.
+- `stop()` no longer swallows a cancellation aimed at the calling task.
+  It runs inside request `finally` blocks; the old
+  `suppress(CancelledError)` turned client disconnects and server shutdown
+  into requests that ignored their own cancellation.
+- `stop()` issued during a blocking `start()` calibration now vetoes the
+  loop start instead of being a silent no-op.
+- A lifespan app that raises no longer leaks the monitor tasks.
+- One blocking event now logs exactly one summary line instead of one line
+  per in-flight request (O(N) log formatting on the loop thread right after
+  a stall). The per-context `on_blocking` callback contract is unchanged.
+- New config validation: `fallback_threshold_ms >= monitor_interval_ms`,
+  `adaptive_update_interval_ms >= monitor_interval_ms`, and `exclude_paths`
+  may not be a bare string (it would silently become a substring match).
+- Strict mode's clean-path headers are now computed from the request
+  context instead of hardcoded zero literals.
+- Calibration clamps a negative raw baseline (timers may fire up to
+  clock_resolution early) to 0.
+
 ## 0.5.0 (2026-08-11)
 
 Correctness release. Every fix below changes externally observable behavior.

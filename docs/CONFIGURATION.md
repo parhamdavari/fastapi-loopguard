@@ -52,7 +52,9 @@ config = LoopGuardConfig(
 | `monitor_interval_ms` | float | `10.0` | Sentinel check frequency (ms) |
 | `threshold_multiplier` | float | `5.0` | Blocking detected when lag > baseline × this |
 | `calibration_iterations` | int | `100` | Samples during startup calibration |
-| `fallback_threshold_ms` | float | `50.0` | Used if calibration is unreliable |
+| `fallback_threshold_ms` | float | `50.0` | Threshold before/without calibration, and the hard ceiling a calibrated or adaptive threshold can never exceed. Must be ≥ `monitor_interval_ms` (lag below the sampling interval cannot be resolved). |
+
+**Validation:** `exclude_paths` must be a collection of paths — a bare string is rejected (it would silently become a substring match).
 
 ---
 
@@ -68,6 +70,8 @@ Catches "death by a thousand cuts" - many small blocks that add up.
 
 **Example:** With defaults, alerts if blocking totals >200ms within any 1-second window.
 
+Only lag **in excess of the calibrated baseline** counts toward the window sum, so platform timer jitter on an idle loop cannot accumulate into a false positive.
+
 ---
 
 ## Adaptive Threshold
@@ -80,7 +84,9 @@ Dynamically adjusts threshold based on observed latency. Useful for high-concurr
 | `adaptive_window_size` | int | `1000` | Samples in sliding window |
 | `adaptive_percentile` | float | `0.95` | Percentile for baseline (0.5-0.99) |
 | `adaptive_min_samples` | int | `100` | Min samples before activation |
-| `adaptive_update_interval_ms` | float | `1000.0` | Recalculation frequency (ms) |
+| `adaptive_update_interval_ms` | float | `1000.0` | Recalculation frequency (ms). Must be ≥ `monitor_interval_ms`. |
+
+The adaptive threshold is clamped to `[calibrated threshold, fallback_threshold_ms]`: adaptation may tighten detection but can never raise the threshold above the fallback, so a noisy loop cannot ratchet the detector blind.
 
 ---
 
