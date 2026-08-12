@@ -1,0 +1,32 @@
+```python
+from fastapi import FastAPI, Depends, status
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers
+
+app = FastAPI()
+
+billing = helpers.BillingClient()  # the shared client instance
+
+
+def get_billing() -> helpers.BillingClient:
+    """FastAPI dependency providing the billing client."""
+    return billing
+
+
+@app.post("/charges", status_code=status.HTTP_201_CREATED)
+async def create_charge(request: Request, billing: helpers.BillingClient = Depends(get_billing)):
+    data = await request.json()
+    amount = data.get("amount")
+    if amount is None:
+        return JSONResponse({"error": "'amount' required"}, status_code=400)
+    try:
+        amount = float(amount)
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "'amount' must be a number"}, status_code=400)
+    loop = asyncio.get_running_loop()
+    receipt = await loop.run_in_executor(None, billing.charge, amount)
+    return {"receipt": receipt}
+```

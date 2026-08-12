@@ -1,0 +1,21 @@
+from fastapi import FastAPI, Query
+from fastapi.responses import JSONResponse
+
+import helpers  # noqa: F401
+
+from typing import Optional, List
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def get_portfolio(symbols: Optional[str] = Query(None)):
+    if not symbols:
+        return JSONResponse({"prices": {}}, status_code=200)
+
+    symbol_list = [s for s in symbols.split(",") if s]
+    # Fetch all prices concurrently
+    coros = [helpers.afetch_price(symbol) for symbol in symbol_list]
+    prices = await asyncio.gather(*coros)
+    ret = {symbol: price for symbol, price in zip(symbol_list, prices)}
+    return {"prices": ret}

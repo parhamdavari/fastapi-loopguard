@@ -1,0 +1,24 @@
+{
+  "task": "04-image-thumbnail",
+  "functional": "unknown",
+  "non_blocking": false,
+  "score": 0,
+  "flagged": [
+    "test_checks.py::test_thumbnail_size"
+  ],
+  "detail": "1 test(s) blocked the event loop",
+  "pytest_tail": [
+    "=========================== short test summary info ============================",
+    "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+    "1 failed in 0.32s"
+  ],
+  "requested_model": "openrouter:openai/gpt-4.1",
+  "returned_model_id": "openai/gpt-4.1",
+  "condition": "neutral",
+  "sample": 4,
+  "temperature": 1.0,
+  "run_date": "2026-08-12T14:13:23+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

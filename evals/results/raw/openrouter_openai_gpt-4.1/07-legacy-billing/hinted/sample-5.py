@@ -1,0 +1,37 @@
+from fastapi import FastAPI, Depends, status
+from fastapi.requests import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+import helpers
+import asyncio
+
+app = FastAPI()
+
+billing = helpers.BillingClient()  # the shared client instance
+
+
+def get_billing() -> helpers.BillingClient:
+    """FastAPI dependency providing the billing client."""
+    return billing
+
+
+class ChargeRequest(BaseModel):
+    amount: float = Field(..., gt=0)
+
+
+class ChargeResponse(BaseModel):
+    receipt: str
+
+
+@app.post("/charges", response_model=ChargeResponse, status_code=status.HTTP_201_CREATED)
+async def create_charge(
+    charge_in: ChargeRequest,
+    billing_client: helpers.BillingClient = Depends(get_billing),
+):
+    loop = asyncio.get_running_loop()
+    # Don't block the event loop: run sync call in executor
+    receipt = await loop.run_in_executor(
+        None, billing_client.charge, charge_in.amount
+    )
+    return {"receipt": receipt}

@@ -1,0 +1,13 @@
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=status.HTTP_201_CREATED)
+async def create_order(request: Request):
+    order = await request.json()
+    processed_order = helpers.process_order(order)
+    return JSONResponse(content=processed_order, status_code=201)

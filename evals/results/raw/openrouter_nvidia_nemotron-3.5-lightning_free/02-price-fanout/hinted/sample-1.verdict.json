@@ -1,0 +1,22 @@
+{
+  "task": "02-price-fanout",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "=========================== short test summary info ============================",
+    "FAILED test_checks.py::test_prices_fetched_concurrently - NameError: name 'as...",
+    "1 failed in 0.32s"
+  ],
+  "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+  "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+  "condition": "hinted",
+  "sample": 1,
+  "temperature": 1.0,
+  "run_date": "2026-08-12T14:30:50+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

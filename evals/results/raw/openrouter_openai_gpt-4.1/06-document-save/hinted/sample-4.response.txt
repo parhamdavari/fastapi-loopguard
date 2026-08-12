@@ -1,0 +1,23 @@
+```python
+from fastapi import FastAPI, status
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import helpers
+import asyncio
+
+app = FastAPI()
+
+class Document(BaseModel):
+    name: str
+    text: str
+
+@app.post("/documents", status_code=status.HTTP_201_CREATED)
+async def save_document_endpoint(doc: Document):
+    loop = asyncio.get_running_loop()
+    # Run the blocking I/O in a thread pool to avoid blocking the event loop
+    bytes_saved = await loop.run_in_executor(
+        None, helpers.save_document, doc.name, doc.text
+    )
+    return {"bytes": bytes_saved}
+```

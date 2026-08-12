@@ -1,0 +1,22 @@
+{
+  "task": "05-audit-log",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "=========================== short test summary info ============================",
+    "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+    "1 failed in 0.21s"
+  ],
+  "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+  "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+  "condition": "neutral",
+  "sample": 5,
+  "temperature": 1.0,
+  "run_date": "2026-08-12T15:00:34+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

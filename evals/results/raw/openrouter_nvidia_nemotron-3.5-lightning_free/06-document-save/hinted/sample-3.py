@@ -1,0 +1,13 @@
+from fastapi import FastAPI, Body
+import helpers
+import asyncio
+
+app = FastAPI()
+
+
+@app.post("/documents", status_code=201)
+async def create_document(payload: dict = Body(...)):
+    name = payload["name"]
+    text = payload["text"]
+    bytes_saved = await asyncio.to_thread(helpers.save_document, name, text)
+    return {"bytes": bytes_saved}

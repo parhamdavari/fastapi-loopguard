@@ -1,0 +1,14 @@
+```python
+from fastapi import FastAPI, status
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/documents", status_code=status.HTTP_201_CREATED)
+def create_document(document: dict):
+    name = document["name"]
+    text = document["text"]
+    bytes_count = helpers.save_document(name, text)
+    return {"bytes": bytes_count}
+```

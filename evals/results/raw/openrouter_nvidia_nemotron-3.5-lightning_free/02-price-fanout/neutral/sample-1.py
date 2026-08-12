@@ -1,0 +1,21 @@
+from fastapi import FastAPI
+import asyncio
+import helpers
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def portfolio(symbols: str = ""):
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+
+    if not symbol_list:
+        return {"prices": {}}
+
+    async def fetch_all():
+        tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
+        results = await asyncio.gather(*tasks)
+        return {symbol: result for symbol, result in zip(symbol_list, results)}
+
+    prices = await fetch_all()
+    return {"prices": prices}

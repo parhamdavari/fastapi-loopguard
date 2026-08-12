@@ -1,0 +1,10 @@
+from fastapi import FastAPI, Body
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+async def create_order(item: str = Body(...)):
+    helpers.aappend_audit_line(f"order:{the_output}")
+    return {"status": "created"}

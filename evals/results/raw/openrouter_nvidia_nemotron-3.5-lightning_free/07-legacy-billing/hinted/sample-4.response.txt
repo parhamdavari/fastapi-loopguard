@@ -1,0 +1,20 @@
+```python
+from fastapi import FastAPI
+import helpers
+import asyncio
+
+app = FastAPI()
+
+billing = helpers.BillingClient()
+
+
+def get_billing() -> helpers.BillingClient:
+    """FastAPI dependency providing the billing client."""
+    return billing
+
+
+@app.post("/charges", status_code=201)
+async def create_charge(amount: float, billing: helpers.BillingClient = get_billing()):
+    receipt = await asyncio.to_thread(billing.charge, amount)
+    return {"receipt": receipt}
+```

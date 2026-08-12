@@ -1,0 +1,22 @@
+from fastapi import FastAPI, status
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import helpers  # noqa: F401
+import asyncio
+
+app = FastAPI()
+
+
+class DocumentIn(BaseModel):
+    name: str
+    text: str
+
+
+@app.post("/documents", status_code=201)
+async def save_document_endpoint(doc: DocumentIn):
+    loop = asyncio.get_running_loop()
+    bytes_written = await loop.run_in_executor(
+        None, helpers.save_document, doc.name, doc.text
+    )
+    return {"bytes": bytes_written}

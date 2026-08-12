@@ -1,0 +1,16 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+import asyncio
+import helpers
+
+app = FastAPI()
+
+
+class Payload(BaseModel):
+    rows: list
+
+
+@app.post("/reports")
+async def post_reports(payload: Payload):
+    rendered = await asyncio.to_thread(helpers.render_report, payload.rows)
+    return {"length": len(rendered)}

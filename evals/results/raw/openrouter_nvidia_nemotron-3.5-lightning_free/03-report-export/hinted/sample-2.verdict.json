@@ -1,0 +1,22 @@
+{
+  "task": "03-report-export",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "ERROR test_checks.py - RuntimeError: Form data requires \"python-multipart\" to...",
+    "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+    "1 error in 0.27s"
+  ],
+  "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+  "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+  "condition": "hinted",
+  "sample": 2,
+  "temperature": 1.0,
+  "run_date": "2026-08-12T14:39:20+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

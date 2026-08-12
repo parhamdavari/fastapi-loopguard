@@ -1,0 +1,21 @@
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import helpers
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+app = FastAPI()
+
+# Create one shared thread pool for the app
+executor = ThreadPoolExecutor()
+
+@app.post("/reports")
+async def create_report(request: Request):
+    data = await request.json()
+    rows = data.get("rows", [])
+    loop = asyncio.get_running_loop()
+    # Offload render_report to a thread, since it holds the GIL and blocks
+    rendered = await loop.run_in_executor(executor, helpers.render_report, rows)
+    return JSONResponse({"length": len(rendered)})
+```
