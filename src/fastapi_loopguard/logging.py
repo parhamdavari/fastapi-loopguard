@@ -35,6 +35,12 @@ class StructuredFormatter(logging.Formatter):
         if hasattr(record, "blocking_count"):
             log_data["blocking_count"] = record.blocking_count
 
+        # Preserve tracebacks: the monitor's failure paths use
+        # logger.exception, and dropping exc_info would discard the only
+        # diagnostics for a failed calibration or a crashed monitor loop
+        if record.exc_info:
+            log_data["exc_info"] = self.formatException(record.exc_info)
+
         return json.dumps(log_data)
 
 
@@ -45,12 +51,22 @@ def configure_logging(
 ) -> None:
     """Configure logging for LoopGuard.
 
+    Idempotent: calling it again replaces the handler it installed earlier
+    instead of stacking a duplicate, and propagation to the root logger is
+    disabled so an app with its own root handler does not log every event
+    twice.
+
     Args:
         level: The logging level (default INFO).
         structured: If True, use JSON formatting.
         stream: Output stream (default stderr).
     """
+    for existing in list(logger.handlers):
+        if getattr(existing, "_loopguard_handler", False):
+            logger.removeHandler(existing)
+
     handler = logging.StreamHandler(stream or sys.stderr)
+    handler._loopguard_handler = True  # type: ignore[attr-defined]
 
     if structured:
         handler.setFormatter(StructuredFormatter())
@@ -61,6 +77,7 @@ def configure_logging(
 
     logger.addHandler(handler)
     logger.setLevel(level)
+    logger.propagate = False
 
 
 def log_blocking_event(

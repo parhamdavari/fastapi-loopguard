@@ -954,3 +954,299 @@ class TestLifespanExceptionCleanup:
         assert middleware._started is False
         assert middleware._monitor is None
         assert _live_loopguard_tasks() == []
+
+
+class TestResponseShapeConformance:
+    """Response shapes beyond one start + one terminal body."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_registry(self) -> None:
+        get_registry().clear()
+
+    async def _drive_messages(
+        self,
+        config: LoopGuardConfig,
+        messages: list[Message],
+        path: str = "/x",
+    ) -> list[Message]:
+        """Send one request through the middleware, return what the server got."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            for message in messages:
+                await send(message)
+
+        middleware = LoopGuardMiddleware(app, config=config)
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope: Scope = {"type": "http", "method": "GET", "path": path, "headers": []}
+        await middleware(scope, receive, send)
+        return sent
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            LoopGuardConfig(log_blocking_events=False),  # warn (default)
+            LoopGuardConfig(
+                enforcement_mode="log", dev_mode=True, log_blocking_events=False
+            ),  # dev headers
+            LoopGuardConfig(
+                enforcement_mode="strict", log_blocking_events=False
+            ),  # strict clean path
+        ],
+        ids=["warn", "dev-headers", "strict"],
+    )
+    async def test_streaming_bodies_pass_through_every_wrapper(
+        self, config: LoopGuardConfig
+    ) -> None:
+        """Multiple body chunks with more_body survive all three wrappers."""
+        chunks = [
+            {"type": "http.response.body", "body": b"a", "more_body": True},
+            {"type": "http.response.body", "body": b"b", "more_body": True},
+            {"type": "http.response.body", "body": b"c", "more_body": False},
+        ]
+        sent = await self._drive_messages(
+            config,
+            [{"type": "http.response.start", "status": 200, "headers": []}, *chunks],
+        )
+
+        starts = [m for m in sent if m["type"] == "http.response.start"]
+        bodies = [m for m in sent if m["type"] == "http.response.body"]
+        assert len(starts) == 1  # headers injected exactly once
+        assert [m["body"] for m in bodies] == [b"a", b"b", b"c"]
+        header_names = [name for name, _ in starts[0]["headers"]]
+        assert b"x-request-id" in header_names
+
+    async def test_no_body_204_response(self) -> None:
+        """A 204 with an empty terminal body passes untouched."""
+        config = LoopGuardConfig(dev_mode=True, log_blocking_events=False)
+        sent = await self._drive_messages(
+            config,
+            [
+                {"type": "http.response.start", "status": 204, "headers": []},
+                {"type": "http.response.body", "body": b"", "more_body": False},
+            ],
+        )
+
+        assert sent[0]["status"] == 204
+        assert dict(sent[0]["headers"])[b"x-blocking-detected"] == b"false"
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            LoopGuardConfig(log_blocking_events=False),
+            LoopGuardConfig(
+                enforcement_mode="log", dev_mode=True, log_blocking_events=False
+            ),
+        ],
+        ids=["warn", "dev-headers"],
+    )
+    async def test_pathsend_and_trailers_forwarded(
+        self, config: LoopGuardConfig
+    ) -> None:
+        """Extension messages pass through the warn and dev-header wrappers."""
+        sent = await self._drive_messages(
+            config,
+            [
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [],
+                    "trailers": True,
+                },
+                {"type": "http.response.pathsend", "path": "/tmp/file.bin"},
+                {"type": "http.response.trailers", "headers": [(b"x-t", b"1")]},
+            ],
+        )
+
+        types = [m["type"] for m in sent]
+        assert "http.response.pathsend" in types
+        assert "http.response.trailers" in types
+        assert sent[0].get("trailers") is True  # start-message key preserved
+
+    async def test_app_exception_propagates_before_response_start(self) -> None:
+        """An exception before any send propagates; nothing reaches the client."""
+        config = LoopGuardConfig(log_blocking_events=False)
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            raise RuntimeError("pre-start explosion")
+
+        middleware = LoopGuardMiddleware(app, config=config)
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope: Scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+        with pytest.raises(RuntimeError, match="pre-start explosion"):
+            await middleware(scope, receive, send)
+
+        assert sent == []
+        assert get_registry().active_count() == 0  # context unregistered
+
+
+class TestLifespanEdgeCases:
+    """Repeated and out-of-order lifespan events."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_registry(self) -> None:
+        get_registry().clear()
+
+    async def _run_lifespan(
+        self,
+        middleware: LoopGuardMiddleware,
+        incoming: list[Message],
+    ) -> list[Message]:
+        """Drive one lifespan connection: app echoes a terminal per message."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            for _ in range(len(incoming)):
+                message = await receive()
+                if message["type"] == "lifespan.startup":
+                    await send({"type": "lifespan.startup.complete"})
+                elif message["type"] == "lifespan.shutdown":
+                    await send({"type": "lifespan.shutdown.complete"})
+
+        middleware.app = app
+        queue = list(incoming)
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return queue.pop(0)
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        await middleware({"type": "lifespan"}, receive, send)
+        return sent
+
+    async def test_double_startup_starts_one_monitor(self) -> None:
+        config = LoopGuardConfig(log_blocking_events=False)
+        middleware = LoopGuardMiddleware(lambda: None, config=config)  # replaced
+
+        await self._run_lifespan(
+            middleware,
+            [{"type": "lifespan.startup"}, {"type": "lifespan.startup"}],
+        )
+        first_monitor = middleware._monitor
+
+        assert middleware._started is True
+        assert first_monitor is not None
+        await middleware._stop_monitor()
+
+    async def test_startup_after_shutdown_restarts_monitor(self) -> None:
+        config = LoopGuardConfig(log_blocking_events=False)
+        middleware = LoopGuardMiddleware(lambda: None, config=config)
+
+        await self._run_lifespan(
+            middleware,
+            [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}],
+        )
+        assert middleware._started is False
+        assert _live_loopguard_tasks() == []
+
+        await self._run_lifespan(middleware, [{"type": "lifespan.startup"}])
+        assert middleware._started is True
+        assert middleware._monitor is not None
+
+        await middleware._stop_monitor()
+
+    async def test_disabled_middleware_lifespan_starts_nothing(self) -> None:
+        config = LoopGuardConfig(enabled=False, log_blocking_events=False)
+        middleware = LoopGuardMiddleware(lambda: None, config=config)
+
+        await self._run_lifespan(
+            middleware,
+            [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}],
+        )
+
+        assert middleware._started is False
+        assert middleware._monitor is None
+        assert _live_loopguard_tasks() == []
+
+
+class TestExcludePathSemantics:
+    """exclude_paths is an exact match on the raw scope path."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_registry(self) -> None:
+        get_registry().clear()
+
+    async def _request_monitored(self, config: LoopGuardConfig, path: str) -> bool:
+        """True if the request registered a context (i.e. was monitored)."""
+        registered: list[int] = []
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            registered.append(get_registry().active_count())
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            pass
+
+        scope: Scope = {"type": "http", "method": "GET", "path": path, "headers": []}
+        await middleware(scope, receive, send)
+        return registered[0] > 0
+
+    async def test_custom_exclude_paths(self) -> None:
+        config = LoopGuardConfig(
+            exclude_paths=frozenset({"/internal/ping"}), log_blocking_events=False
+        )
+        assert await self._request_monitored(config, "/internal/ping") is False
+        assert await self._request_monitored(config, "/api/users") is True
+
+    async def test_exclusion_is_exact_not_prefix(self) -> None:
+        """Documents current semantics: /health/live is NOT excluded by /health."""
+        config = LoopGuardConfig(log_blocking_events=False)
+        assert await self._request_monitored(config, "/health") is False
+        assert await self._request_monitored(config, "/health/live") is True
+
+
+class TestScopeStatePreserved:
+    """A pre-populated scope state dict must be extended, not replaced."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_registry(self) -> None:
+        get_registry().clear()
+
+    async def test_existing_state_keys_survive(self) -> None:
+        config = LoopGuardConfig(log_blocking_events=False)
+        seen: dict[str, object] = {}
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            seen.update(scope["state"])
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            pass
+
+        scope: Scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/x",
+            "headers": [],
+            "state": {"outer_middleware": "present"},
+        }
+        await middleware(scope, receive, send)
+
+        assert seen["outer_middleware"] == "present"
+        assert "loopguard_request_id" in seen

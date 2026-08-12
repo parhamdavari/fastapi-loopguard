@@ -117,9 +117,15 @@ class TestConfigureLogging:
 
     @pytest.fixture(autouse=True)
     def cleanup_handlers(self) -> None:
-        """Remove handlers after each test."""
+        """Restore logger state after each test.
+
+        configure_logging disables propagation; leaving that in place would
+        break caplog-based tests elsewhere in the suite.
+        """
         yield
         logger.handlers.clear()
+        logger.propagate = True
+        logger.setLevel(logging.NOTSET)
 
     def test_configure_with_defaults(self) -> None:
         """Test configuration with default values."""
@@ -240,3 +246,60 @@ class TestLogBlockingEvent:
         data = json.loads(output.strip())
 
         assert data["level"] == "WARNING"
+
+
+class TestConfigureLoggingIdempotence:
+    """configure_logging must not stack handlers or double-log."""
+
+    @pytest.fixture(autouse=True)
+    def cleanup_handlers(self) -> None:
+        """Restore logger state after each test."""
+        yield
+        logger.handlers.clear()
+        logger.propagate = True
+        logger.setLevel(logging.NOTSET)
+
+    def test_second_call_replaces_handler(self) -> None:
+        first = StringIO()
+        second = StringIO()
+
+        configure_logging(stream=first)
+        configure_logging(stream=second)
+
+        assert len(logger.handlers) == 1
+
+        logger.warning("once")
+        assert "once" not in first.getvalue()
+        assert second.getvalue().count("once") == 1
+
+    def test_propagation_disabled(self) -> None:
+        """A root handler must not receive our events a second time."""
+        configure_logging(stream=StringIO())
+        assert logger.propagate is False
+
+
+class TestStructuredFormatterExcInfo:
+    """Tracebacks must survive structured formatting."""
+
+    def test_exc_info_preserved(self) -> None:
+        formatter = StructuredFormatter()
+        try:
+            raise ValueError("calibration exploded")
+        except ValueError:
+            import sys
+
+            record = logging.LogRecord(
+                name="fastapi_loopguard",
+                level=logging.ERROR,
+                pathname="",
+                lineno=0,
+                msg="LoopGuard calibration failed",
+                args=(),
+                exc_info=sys.exc_info(),
+            )
+
+        data = json.loads(formatter.format(record))
+
+        assert "exc_info" in data
+        assert "ValueError: calibration exploded" in data["exc_info"]
+        assert "Traceback" in data["exc_info"]

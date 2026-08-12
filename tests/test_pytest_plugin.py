@@ -278,3 +278,104 @@ class TestPytestPluginIntegration:
         assert "blocking event(s)" in stdout
         assert "max lag:" in stdout
         assert "threshold:" in stdout
+
+
+class TestPluginHygiene:
+    """Plugin behavior as an always-installed pytest11 entry point."""
+
+    def test_no_deprecation_warnings_under_error_filter(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The plugin must survive a downstream -W error suite.
+
+        asyncio.iscoroutinefunction is deprecated on 3.14 and scheduled for
+        removal; the plugin auto-loads into every project that installs the
+        package, so its hooks may not emit deprecation warnings.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking
+            async def test_clean():
+                await asyncio.sleep(0.01)
+        """)
+
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 50
+            filterwarnings =
+                error::DeprecationWarning
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1)
+
+    def test_sync_test_with_marker_warns(self, pytester: pytest.Pytester) -> None:
+        """The marker on a sync test warns instead of silently no-opping."""
+        pytester.makepyfile("""
+            import pytest
+            import time
+
+            @pytest.mark.no_blocking
+            def test_sync_blocking():
+                time.sleep(0.05)
+        """)
+
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=1)
+        assert "has no effect on synchronous test" in result.stdout.str()
+
+    def test_loopguard_detector_fixture_removed(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The never-started detector fixture is gone.
+
+        It yielded a detector that was never started, so asserting on its
+        (always empty) blocking_events passed unconditionally.
+        """
+        pytester.makepyfile("""
+            def test_uses_fixture(loopguard_detector):
+                pass
+        """)
+
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(errors=1)
+        assert "loopguard_detector" in result.stdout.str()
+
+    def test_marked_test_that_raises_reports_original_error(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """A failing marked test fails with its own error, detector stopped."""
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking
+            async def test_raises():
+                await asyncio.sleep(0.01)
+                raise RuntimeError("the test itself is broken")
+        """)
+
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 50
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+        assert "the test itself is broken" in result.stdout.str()
+        assert "Event loop blocking detected" not in result.stdout.str()

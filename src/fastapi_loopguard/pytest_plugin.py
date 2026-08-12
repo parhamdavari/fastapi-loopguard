@@ -17,8 +17,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import contextlib
-from collections.abc import Generator
+import inspect
 from typing import Any
 
 import pytest
@@ -60,12 +59,22 @@ class BlockingDetector:
         self._task = asyncio.create_task(self._monitor())
 
     async def stop(self) -> None:
-        """Stop the blocking detector."""
+        """Stop the blocking detector.
+
+        Runs inside test finally blocks, so it must not swallow a
+        cancellation aimed at the test itself (e.g. a timeout plugin).
+        """
         self._running = False
-        if self._task:
-            self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._task
+        task = self._task
+        self._task = None
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                current = asyncio.current_task()
+                if current is not None and current.cancelling():
+                    raise
 
     async def _monitor(self) -> None:
         """Monitor for blocking."""
@@ -82,18 +91,6 @@ class BlockingDetector:
                 self.blocking_events.append(lag_ms)
 
 
-@pytest.fixture
-def loopguard_detector(
-    request: pytest.FixtureRequest,
-) -> Generator[BlockingDetector, None, None]:
-    """Fixture that provides a blocking detector for tests."""
-    threshold_str = request.config.getini("loopguard_threshold_ms")
-    threshold = float(threshold_str) if threshold_str else 50.0
-
-    detector = BlockingDetector(threshold_ms=threshold)
-    yield detector
-
-
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_call(item: pytest.Item) -> None:
     """Check for blocking after test execution."""
@@ -108,28 +105,38 @@ def pytest_runtest_call(item: pytest.Item) -> None:
     # Store the original test function
     original_func = item.obj
 
-    if asyncio.iscoroutinefunction(original_func):
-        # Wrap async test with blocking detection
-        async def wrapped(*args: Any, **kwargs: Any) -> Any:
-            threshold_str = item.config.getini("loopguard_threshold_ms")
-            threshold = float(threshold_str) if threshold_str else 50.0
+    if not inspect.iscoroutinefunction(original_func):
+        # A sync test never runs on the event loop; silently passing would
+        # let the author believe blocking was checked
+        item.warn(
+            pytest.PytestWarning(
+                f"@pytest.mark.{MARKER_NAME} has no effect on synchronous "
+                f"test {item.nodeid}: there is no event loop to monitor"
+            )
+        )
+        return
 
-            detector = BlockingDetector(threshold_ms=threshold)
-            await detector.start()
+    # Wrap async test with blocking detection
+    async def wrapped(*args: Any, **kwargs: Any) -> Any:
+        threshold_str = item.config.getini("loopguard_threshold_ms")
+        threshold = float(threshold_str) if threshold_str else 50.0
 
-            try:
-                result = await original_func(*args, **kwargs)
-            finally:
-                await detector.stop()
+        detector = BlockingDetector(threshold_ms=threshold)
+        await detector.start()
 
-            if detector.blocking_events:
-                max_lag = max(detector.blocking_events)
-                pytest.fail(
-                    f"Event loop blocking detected! "
-                    f"{len(detector.blocking_events)} blocking event(s), "
-                    f"max lag: {max_lag:.2f}ms (threshold: {threshold}ms)"
-                )
+        try:
+            result = await original_func(*args, **kwargs)
+        finally:
+            await detector.stop()
 
-            return result
+        if detector.blocking_events:
+            max_lag = max(detector.blocking_events)
+            pytest.fail(
+                f"Event loop blocking detected! "
+                f"{len(detector.blocking_events)} blocking event(s), "
+                f"max lag: {max_lag:.2f}ms (threshold: {threshold}ms)"
+            )
 
-        item.obj = wrapped
+        return result
+
+    item.obj = wrapped
