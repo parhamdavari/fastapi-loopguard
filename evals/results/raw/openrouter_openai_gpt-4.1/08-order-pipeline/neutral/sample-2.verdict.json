@@ -1,0 +1,24 @@
+{
+  "task": "08-order-pipeline",
+  "functional": "unknown",
+  "non_blocking": false,
+  "score": 0,
+  "flagged": [
+    "test_checks.py::test_processes_order"
+  ],
+  "detail": "1 test(s) blocked the event loop",
+  "pytest_tail": [
+    "=========================== short test summary info ============================",
+    "FAILED test_checks.py::test_processes_order - Failed: Event loop blocking det...",
+    "1 failed in 0.32s"
+  ],
+  "requested_model": "openrouter:openai/gpt-4.1",
+  "returned_model_id": "openai/gpt-4.1",
+  "condition": "neutral",
+  "sample": 2,
+  "temperature": 1.0,
+  "run_date": "2026-08-12T14:15:52+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

@@ -1,0 +1,16 @@
+from fastapi import FastAPI, Query
+from typing import List, Dict
+import helpers
+import asyncio
+
+app = FastAPI()
+
+@app.get("/portfolio")
+async def get_portfolio(symbols: str = Query(..., description="Comma-separated list of symbols")):
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    # Run all afetch_price coroutines concurrently
+    coros = [helpers.afetch_price(symbol) for symbol in symbol_list]
+    results = await asyncio.gather(*coros)
+    # Assemble the response dictionary
+    prices: Dict[str, float] = dict(zip(symbol_list, results))
+    return {"prices": prices}

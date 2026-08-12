@@ -1,0 +1,3885 @@
+{
+  "meta": {
+    "generated_at": "2026-08-12T15:42:15+00:00",
+    "samples": 5,
+    "temperature": 1.0,
+    "environment": {
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    "judge_self_check": {
+      "total": 16,
+      "errors": [],
+      "error_rate": "0/16"
+    },
+    "skipped_models": []
+  },
+  "cells": [
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "01-user-lookup",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 1
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "01-user-lookup",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 1
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "02-price-fanout",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 1
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "02-price-fanout",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "03-report-export",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 3,
+      "pass_rate": 0.6,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 2
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "03-report-export",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "04-image-thumbnail",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 1
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "04-image-thumbnail",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "blocked": 5,
+      "blocked_rate": 1.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "05-audit-log",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 1,
+      "pass_rate": 0.2,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 4
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "05-audit-log",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 5
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "06-document-save",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 3,
+      "pass_rate": 0.6,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 2
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "06-document-save",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "07-legacy-billing",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 5
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "07-legacy-billing",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 5
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "08-order-pipeline",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "task": "08-order-pipeline",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "01-user-lookup",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "01-user-lookup",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "02-price-fanout",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 1
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "02-price-fanout",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 2,
+      "pass_rate": 0.4,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 3
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "03-report-export",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "03-report-export",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "blocked": 5,
+      "blocked_rate": 1.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "04-image-thumbnail",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "04-image-thumbnail",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "blocked": 5,
+      "blocked_rate": 1.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "05-audit-log",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "05-audit-log",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "06-document-save",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "06-document-save",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "blocked": 5,
+      "blocked_rate": 1.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "07-legacy-billing",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "07-legacy-billing",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "blocked": 1,
+      "blocked_rate": 0.2,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "08-order-pipeline",
+      "condition": "hinted",
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 0
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "task": "08-order-pipeline",
+      "condition": "neutral",
+      "n": 5,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "blocked": 5,
+      "blocked_rate": 1.0,
+      "functional_fail_only": 0
+    }
+  ],
+  "models": [
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "n": 40,
+      "passed": 24,
+      "pass_rate": 0.6,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 16
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "n": 40,
+      "passed": 24,
+      "pass_rate": 0.6,
+      "blocked": 5,
+      "blocked_rate": 0.125,
+      "functional_fail_only": 11
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "condition": "hinted",
+      "n": 40,
+      "passed": 39,
+      "pass_rate": 0.975,
+      "blocked": 0,
+      "blocked_rate": 0.0,
+      "functional_fail_only": 1
+    },
+    {
+      "model": "openrouter:openai/gpt-4.1",
+      "condition": "neutral",
+      "n": 40,
+      "passed": 16,
+      "pass_rate": 0.4,
+      "blocked": 21,
+      "blocked_rate": 0.525,
+      "functional_fail_only": 3
+    }
+  ],
+  "records": [
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:21:57+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.36s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:24:10+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_returns_user - ValueError: [TypeError(\"'coroutine...",
+        "1 failed in 0.28s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:24:50+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:25:30+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:27:33+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:16:34+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.30s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:16:49+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:18:24+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:19:11+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "ERROR test_checks.py",
+        "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+        "1 error in 0.09s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:20:36+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_prices_fetched_concurrently - NameError: name 'as...",
+        "1 failed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:30:50+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:31:09+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:31:14+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.31s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:40:01+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:33:24+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:27:45+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:28:34+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:28:46+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.30s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:29:31+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.30s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:30:10+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_renders_report - assert 422 == 200",
+        "1 failed in 0.20s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:38:30+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "ERROR test_checks.py - RuntimeError: Form data requires \"python-multipart\" to...",
+        "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+        "1 error in 0.27s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:39:20+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:39:58+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:43:13+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.37s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:44:17+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:34:25+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.39s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:35:37+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:35:46+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:37:00+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:37:52+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.33s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:46:07+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:47:24+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - TypeError: object of type 'corou...",
+        "1 failed in 0.50s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:51:46+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:53:20+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:53:54+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:44:26+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:44:41+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:45:15+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.31s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:45:23+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:45:47+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+        "1 failed in 0.20s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:01:44+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.31s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:03:18+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "ERROR test_checks.py",
+        "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+        "1 error in 0.08s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:03:33+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+        "1 failed in 0.20s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:04:19+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:05:20+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:54:02+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+        "1 failed in 0.23s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:57:01+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:58:28+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:59:53+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_creates_order_with_audit_line - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:00:34+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:09:17+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "ERROR test_checks.py",
+        "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+        "1 error in 0.10s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:09:32+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.36s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:10:22+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:11:38+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "ERROR test_checks.py",
+        "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+        "1 error in 0.09s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:21:40+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.31s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:05:52+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:06:20+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:07:03+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.31s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:07:14+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:07:48+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.20s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:27:02+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:28:50+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:29:35+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "ERROR test_checks.py - fastapi.exceptions.FastAPIError: Invalid args for resp...",
+        "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+        "1 error in 0.30s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:30:39+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.20s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:31:29+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.22s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:23:19+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.22s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:24:19+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:25:23+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.22s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:25:57+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+        "1 failed in 0.21s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:26:31+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:34:27+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.37s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:35:05+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.33s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:36:40+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.33s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:37:42+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.36s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:38:46+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:31:46+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:32:08+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.34s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:32:30+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:32:54+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.35s"
+      ],
+      "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T15:33:32+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:10:53+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:01+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:04+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:07+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:10+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.33s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:10:30+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.33s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:10:40+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:10:44+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:10:47+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "01-user-lookup",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:10:50+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:46+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:51+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_prices_fetched_concurrently - NameError: name 'as...",
+        "1 failed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:57+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:01+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:05+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_prices_fetched_concurrently - NameError: name 'as...",
+        "1 failed in 0.25s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:14+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_prices_fetched_concurrently - NameError: name 'as...",
+        "1 failed in 0.24s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:18+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:25+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:38+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "02-price-fanout",
+      "functional": false,
+      "non_blocking": true,
+      "score": 0,
+      "flagged": [],
+      "detail": "functional checks failed",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_prices_fetched_concurrently - NameError: name 'as...",
+        "1 failed in 0.24s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:11:42+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:37+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:45+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:01+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:05+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:08+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_renders_report"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_renders_report - Failed: Event loop blocking dete...",
+        "1 failed in 0.31s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:08+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_renders_report"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_renders_report - Failed: Event loop blocking dete...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:13+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_renders_report"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_renders_report - Failed: Event loop blocking dete...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:19+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_renders_report"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_renders_report - Failed: Event loop blocking dete...",
+        "1 failed in 0.32s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:22+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "03-report-export",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_renders_report"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_renders_report - Failed: Event loop blocking dete...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:12:27+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:28+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:31+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:34+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.32s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:45+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:48+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:13+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:17+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:20+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.32s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:23+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "04-image-thumbnail",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_thumbnail_size"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:25+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:10+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:13+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:17+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:20+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:23+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:51+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:53+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:56+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:13:59+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "05-audit-log",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.25s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:02+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:44+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:47+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:51+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:54+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:59+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_saves_document"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_saves_document - Failed: Event loop blocking dete...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:26+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_saves_document"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_saves_document - Failed: Event loop blocking dete...",
+        "1 failed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:29+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_saves_document"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_saves_document - Failed: Event loop blocking dete...",
+        "1 failed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:33+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_saves_document"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_saves_document - Failed: Event loop blocking dete...",
+        "1 failed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:36+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "06-document-save",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_saves_document"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_saves_document - Failed: Event loop blocking dete...",
+        "1 failed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:14:39+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:29+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:32+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:36+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:40+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:44+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_charges_amount"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_charges_amount - Failed: Event loop blocking dete...",
+        "1 failed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:03+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.27s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:11+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:14+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.26s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:21+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "07-legacy-billing",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:25+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:16:04+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:16:07+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:16:10+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.28s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:16:13+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": true,
+      "non_blocking": true,
+      "score": 1,
+      "flagged": [],
+      "detail": "all checks passed without blocking",
+      "pytest_tail": [
+        ".                                                                        [100%]",
+        "1 passed in 0.29s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "hinted",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:16:16+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_processes_order"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_processes_order - Failed: Event loop blocking det...",
+        "1 failed in 0.31s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 1,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:48+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_processes_order"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_processes_order - Failed: Event loop blocking det...",
+        "1 failed in 0.32s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 2,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:52+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_processes_order"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_processes_order - Failed: Event loop blocking det...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 3,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:55+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_processes_order"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_processes_order - Failed: Event loop blocking det...",
+        "1 failed in 0.31s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 4,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:15:58+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    },
+    {
+      "task": "08-order-pipeline",
+      "functional": "unknown",
+      "non_blocking": false,
+      "score": 0,
+      "flagged": [
+        "test_checks.py::test_processes_order"
+      ],
+      "detail": "1 test(s) blocked the event loop",
+      "pytest_tail": [
+        "=========================== short test summary info ============================",
+        "FAILED test_checks.py::test_processes_order - Failed: Event loop blocking det...",
+        "1 failed in 0.30s"
+      ],
+      "requested_model": "openrouter:openai/gpt-4.1",
+      "returned_model_id": "openai/gpt-4.1",
+      "condition": "neutral",
+      "sample": 5,
+      "temperature": 1.0,
+      "run_date": "2026-08-12T14:16:01+00:00",
+      "python_version": "3.14.3",
+      "loopguard_version": "0.6.1",
+      "threshold_ms": 50
+    }
+  ]
+}

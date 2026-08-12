@@ -1,0 +1,17 @@
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def create_order(request: Request):
+    data = await request.json()
+    item = data.get("item")
+    if not isinstance(item, str):
+        return JSONResponse({"detail": "Missing or invalid 'item'"}, status_code=400)
+    line = f"order:{item}"
+    await helpers.aappend_audit_line(line)
+    return JSONResponse({"status": "created"}, status_code=status.HTTP_201_CREATED)

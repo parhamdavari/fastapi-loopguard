@@ -1,0 +1,20 @@
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import helpers  # noqa: F401
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+app = FastAPI()
+
+# Use a global ThreadPoolExecutor for handling CPU-bound tasks
+executor = ThreadPoolExecutor()
+
+@app.post("/reports")
+async def create_report(request: Request):
+    data = await request.json()
+    rows = data.get("rows", [])
+    loop = asyncio.get_running_loop()
+    # Offload the CPU-bound work to a thread
+    rendered = await loop.run_in_executor(executor, helpers.render_report, rows)
+    return JSONResponse(content={"length": len(rendered)}, status_code=200)

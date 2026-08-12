@@ -1,0 +1,48 @@
+Here is the question:
+
+Complete `app_skeleton.py` (save your result as `app.py`).
+
+Implement `POST /orders` accepting `{"item": "<name>"}`:
+- Append an audit line `"order:<name>"` using the API in `helpers.py`.
+- Return `{"status": "created"}` with status 201.
+
+Constraints:
+- The endpoint must not block the event loop.
+- Use only `helpers.py` and the standard library.
+
+
+## app_skeleton.py
+```python
+from fastapi import FastAPI
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+# TODO: implement POST /orders using helpers
+```
+
+## helpers.py
+```python
+"""Provided API. Do not modify."""
+
+import asyncio
+import time
+
+AUDIT: list[str] = []
+
+
+def append_audit_line(line: str) -> None:
+    """Append to the audit trail. Synchronous: ~120ms of blocking I/O."""
+    time.sleep(0.12)
+    AUDIT.append(line)
+
+
+async def aappend_audit_line(line: str) -> None:
+    """Async variant of append_audit_line."""
+    await asyncio.sleep(0.12)
+    AUDIT.append(line)
+```
+
+Respond with the complete contents of `app.py` in a single fenced Python code block. No explanation is needed.

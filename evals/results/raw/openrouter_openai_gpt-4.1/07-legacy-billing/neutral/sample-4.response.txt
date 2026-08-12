@@ -1,0 +1,31 @@
+```python
+from fastapi import FastAPI, Depends, status
+from fastapi import Body
+from fastapi.responses import JSONResponse
+
+import helpers
+
+app = FastAPI()
+
+billing = helpers.BillingClient()  # the shared client instance
+
+
+def get_billing() -> helpers.BillingClient:
+    """FastAPI dependency providing the billing client."""
+    return billing
+
+
+@app.post("/charges", status_code=status.HTTP_201_CREATED)
+def create_charge(
+    data: dict = Body(...),
+    billing_client: helpers.BillingClient = Depends(get_billing),
+):
+    amount = data.get("amount")
+    if not isinstance(amount, (int, float)):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Invalid or missing 'amount'"},
+        )
+    receipt_id = billing_client.charge(amount)
+    return {"receipt": receipt_id}
+```

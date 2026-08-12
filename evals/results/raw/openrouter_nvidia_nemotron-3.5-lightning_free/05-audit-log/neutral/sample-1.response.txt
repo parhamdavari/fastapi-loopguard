@@ -1,0 +1,13 @@
+```python
+from fastapi import FastAPI
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def create_order(item: str):
+    helpers.append_audit_line(f"order:{item}")
+    return {"status": "created"}, 201
+```

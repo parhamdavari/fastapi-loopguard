@@ -1,0 +1,15 @@
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+@app.post("/documents")
+async def save_document(request: Request):
+    data = await request.json()
+    name = data.get("name")
+    text = data.get("text")
+    bytes_written = helpers.save_document(name, text)
+    return JSONResponse(content={"bytes": bytes_written}, status_code=status.HTTP_201_CREATED)
