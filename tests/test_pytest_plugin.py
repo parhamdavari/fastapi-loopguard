@@ -544,3 +544,36 @@ class TestJsonReport:
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1)
         assert not list(pytester.path.glob("*.json"))
+
+
+class TestDetectorArmedBeforeTestBody:
+    """The sentinel must be armed before the test body runs."""
+
+    def test_block_before_first_await_is_detected(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """A test that blocks immediately (no prior yield) must still fail.
+
+        An ASGI request dispatch can reach blocking code without ever
+        returning to the scheduler; if start() does not yield, the monitor
+        task never arms and the block is invisible.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking
+            async def test_blocks_immediately():
+                time.sleep(0.2)  # no await before the block
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+        assert "Event loop blocking detected" in result.stdout.str()
