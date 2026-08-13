@@ -1,0 +1,14 @@
+from fastapi import FastAPI
+from starlette.concurrency import run_in_threadpool
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+async def create_order(order: dict):
+    """
+    Process an incoming order asynchronously to avoid blocking the event loop.
+    """
+    processed_order = await run_in_threadpool(helpers.process_order, order)
+    return processed_order

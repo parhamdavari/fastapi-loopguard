@@ -1,0 +1,10 @@
+from fastapi import FastAPI
+
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+def create_order(order: dict):
+    return helpers.process_order(order)

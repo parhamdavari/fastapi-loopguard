@@ -1,0 +1,14 @@
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def create_order(payload: dict):
+    item = payload.get("item")
+    await run_in_threadpool(helpers.append_audit_line, f"order:{item}")
+    return JSONResponse(content={"status": "created"}, status_code=201)

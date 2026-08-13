@@ -1,0 +1,23 @@
+from fastapi import FastAPI, Query
+import helpers
+import asyncio
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def get_portfolio(symbols: str = Query(..., description="Comma-separated list of symbols")):
+    # Split the query string into individual symbols, ignoring empty parts
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    
+    # If no symbols were provided, return an empty price map
+    if not symbol_list:
+        return {"prices": {}}
+    
+    # Launch concurrent async fetches for each symbol
+    fetch_tasks = [helpers.afetch_price(sym) for sym in symbol_list]
+    prices = await asyncio.gather(*fetch_tasks)
+    
+    # Build the result dictionary
+    price_dict = {sym: price for sym, price in zip(symbol_list, prices)}
+    return {"prices": price_dict}

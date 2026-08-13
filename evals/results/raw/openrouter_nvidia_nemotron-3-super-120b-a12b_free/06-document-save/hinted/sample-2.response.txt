@@ -1,0 +1,22 @@
+```python
+from fastapi import FastAPI
+import asyncio
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+class DocumentPayload:
+    def __init__(self, name: str, text: str):
+        self.name = name
+        self.text = text
+
+
+@app.post("/documents", status_code=201)
+async def create_document(payload: DocumentPayload):
+    # Offload the synchronous I/O to a thread to avoid blocking the event loop
+    written_bytes = await asyncio.to_thread(
+        helpers.save_document, payload.name, payload.text
+    )
+    return {"bytes": written_bytes}
+```

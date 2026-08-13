@@ -1,0 +1,12 @@
+from fastapi import FastAPI, Body
+import asyncio
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/documents", status_code=201)
+async def save_document_endpoint(name: str = Body(...), text: str = Body(...)):
+    bytes_saved = await asyncio.to_thread(helpers.save_document, name, text)
+    return {"bytes": bytes_saved}

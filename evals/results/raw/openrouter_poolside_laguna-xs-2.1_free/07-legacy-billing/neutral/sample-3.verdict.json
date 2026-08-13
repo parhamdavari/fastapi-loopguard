@@ -1,0 +1,22 @@
+{
+  "task": "07-legacy-billing",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "ERROR test_checks.py",
+    "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+    "1 error in 0.08s"
+  ],
+  "requested_model": "openrouter:poolside/laguna-xs-2.1:free",
+  "returned_model_id": "poolside/laguna-xs-2.1:free",
+  "condition": "neutral",
+  "sample": 3,
+  "temperature": 1.0,
+  "run_date": "2026-08-13T11:32:19+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

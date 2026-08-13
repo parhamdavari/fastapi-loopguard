@@ -1,0 +1,91 @@
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/thumbnail")
+async def thumbnail(request: Request):
+    data = await request.body()
+    loop = asyncio.get_event_loop()
+    size = await loop.run_in_executor(None, len, data)
+    size = await loop.run_in_executor(None, int, size)
+    size = await loop.run_in_executor(None, lambda: len(helpers.resize_image(data)))
+    return JSONResponse({"size": size}, status_code=200)
+```
+
+Wait, that's not quite right. Let me reconsider.
+
+Actually, `helpers.resize_image(data)` needs to be run in an executor because it's CPU-bound (synchronous). The key is to avoid blocking the event loop.
+
+Let me think about this more carefully:
+
+1. I need to read the raw body bytes using `Request`
+2. I need to call `helpers.resize_image(data)` which is CPU-bound
+3. I need to return `{"size": len(thumbnail_bytes)}`
+
+Since `resize_image` is synchronous and CPU-bound, I should use `run_in_executor` to prevent blocking the event loop.
+
+Let me rewrite this properly:
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/thumbnail")
+async def thumbnail(request: Request):
+    data = await request.body()
+    loop = asyncio.get_event_loop()
+    thumbnail = await loop.run_in_executor(None, helpers.resize_image, data)
+    return JSONResponse({"size": len(thumbnail)}, status_code=200)
+```
+
+This is cleaner and correct. Let me make sure this is the final version.
+
+Actually, I want to double-check the constraints:
+- Must not block the event loop ✓ (using run_in_executor)
+- Use only helpers.py, FastAPI's Request, and standard library ✓ (using asyncio from stdlib)
+- Return {"size": <len of thumbnail bytes>} with status 200 ✓
+
+Yes, this looks good. Let me finalize it.
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/thumbnail")
+async def thumbnail(request: Request):
+    data = await request.body()
+    loop = asyncio.get_event_loop()
+    thumbnail = await loop.run_in_executor(None, helpers.resize_image, data)
+    return JSONResponse({"size": len(thumbnail)}, status_code=200)
+```
+
+This should be the complete and correct solution. It:
+1. Reads the raw request body asynchronously
+2. Offloads the CPU-bound `helpers.resize_image(data)` to a thread executor to prevent blocking the event loop
+3. Returns the size of the thumbnail bytes in the required JSON format with 200 status
+
+Let me verify once more that I'm only using allowed imports:
+- `fastapi.FastAPI` and `fastapi.Request` ✓ (FastAPI's Request is explicitly allowed)
+- `helpers` ✓ (provided API)
+- `asyncio` ✓ (standard library)
+- `fastapi.responses.JSONResponse` ✓ (needed for explicit response control)
+
+Yes, everything checks out. This is the final solution.

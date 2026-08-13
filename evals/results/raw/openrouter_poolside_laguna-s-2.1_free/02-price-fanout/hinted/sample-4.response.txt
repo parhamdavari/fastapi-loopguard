@@ -1,0 +1,35 @@
+To solve this problem, we need to create an endpoint that fetches prices for multiple symbols concurrently, ensuring that the total latency remains close to a single fetch rather than the sum of all fetches. We will achieve this by using asynchronous operations and concurrent execution.
+
+### Approach
+1. **Concurrent Fetching**: Use the asynchronous `afetch_price` method provided in `helpers` to fetch prices concurrently.
+2. **Event Loop Management**: Ensure that the endpoint doesn't block the event loop by using asynchronous operations.
+3. **FastAPI Setup**: Define a route that parses the `symbols` query parameter, splits it into individual symbols, and initiates concurrent fetches.
+4. **Response Handling**: Collect the results from all concurrent fetches and structure them into the required JSON response format.
+
+### Solution Code
+```python
+from fastapi import FastAPI
+from typing import List, Dict
+
+import helpers
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def get_portfolio(symbols: str):
+    symbol_list = symbols.split(',')
+    tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
+    prices_list = await helpers.asyncio.gather(*tasks)
+    prices = {symbol: price for symbol, price in zip(symbol_list, prices_list)}
+    return {"prices": prices}
+```
+
+### Explanation
+1. **Route Definition**: The route `/portfolio` is defined to handle GET requests. It expects a query parameter `symbols` which is a comma-separated string.
+2. **Symbol Splitting**: The `symbols` parameter is split into a list of individual symbol strings.
+3. **Concurrent Tasks**: For each symbol, an asynchronous task (`afetch_price`) is created. These tasks are gathered using `asyncio.gather`, which allows them to run concurrently.
+4. **Result Aggregation**: The results from all concurrent tasks are collected into a dictionary mapping each symbol to its price.
+5. **Response**: The aggregated results are returned in the required JSON format with a status code of 200.
+
+This approach ensures that all price fetches happen concurrently, keeping the total latency close to a single fetch time rather than the sum of all fetches, thus efficiently utilizing asynchronous operations without blocking the event loop.

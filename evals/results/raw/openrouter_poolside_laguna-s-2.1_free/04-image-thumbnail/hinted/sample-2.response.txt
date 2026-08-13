@@ -1,0 +1,20 @@
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/thumbnail")
+async def thumbnail(request: Request) -> JSONResponse:
+    data = await request.body()
+
+    def _resize():
+        return helpers.resize_image(data)
+
+    thumbnail_data = await asyncio.to_thread(_resize)
+    return JSONResponse({"size": len(thumbnail_data)}, status_code=200)
+```

@@ -1,0 +1,19 @@
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import asyncio
+import functools
+
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+@functools.lru_cache(maxsize=None)
+def _run_in_thread(rows: list):
+    return helpers.render_report(rows)
+
+
+@app.post("/reports")
+async def create_report(rows: list):
+    result = await asyncio.to_thread(helpers.render_report, rows)
+    return JSONResponse({"length": len(result)})

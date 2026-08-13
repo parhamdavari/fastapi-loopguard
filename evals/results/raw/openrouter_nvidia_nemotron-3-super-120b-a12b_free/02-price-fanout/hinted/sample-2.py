@@ -1,0 +1,21 @@
+from fastapi import FastAPI
+import helpers
+import asyncio
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def portfolio(symbols: str = ""):
+    # Split the comma‑separated list, ignore empty parts
+    sym_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not sym_list:
+        return {"prices": {}}
+
+    # Create a coroutine for each symbol using the async helper
+    coroutines = [helpers.afetch_price(sym) for sym in sym_list]
+    # Run them concurrently; total latency ≈ one fetch
+    prices = await asyncio.gather(*coroutines)
+
+    # Build the result dict
+    return {"prices": dict(zip(sym_list, prices))}

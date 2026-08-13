@@ -1,0 +1,12 @@
+from fastapi import FastAPI, Request
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def create_order(request: Request):
+    order = await request.json()
+    processed_order = helpers.process_order(order)
+    return processed_order

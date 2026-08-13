@@ -1,0 +1,10 @@
+from fastapi import FastAPI
+from typing import Dict
+import helpers
+
+app = FastAPI()
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: int) -> Dict:
+    """Return a user record."""
+    return await helpers.aload_user(user_id)

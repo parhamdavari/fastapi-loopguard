@@ -1,0 +1,21 @@
+{
+  "task": "02-price-fanout",
+  "functional": true,
+  "non_blocking": true,
+  "score": 1,
+  "flagged": [],
+  "detail": "all checks passed without blocking",
+  "pytest_tail": [
+    ".                                                                        [100%]",
+    "1 passed in 0.27s"
+  ],
+  "requested_model": "openrouter:poolside/laguna-xs-2.1:free",
+  "returned_model_id": "poolside/laguna-xs-2.1:free",
+  "condition": "neutral",
+  "sample": 1,
+  "temperature": 1.0,
+  "run_date": "2026-08-13T07:26:58+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

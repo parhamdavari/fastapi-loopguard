@@ -1,0 +1,11 @@
+from fastapi import FastAPI
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+async def create_order(order: dict):
+    processed_order = helpers.process_order(order)
+    return processed_order

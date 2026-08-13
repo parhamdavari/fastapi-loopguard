@@ -1,0 +1,12 @@
+from fastapi import FastAPI, Body
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+async def create_order(payload: dict = Body(...)):
+    name = payload.get("item")
+    # Assuming the payload is valid as per the spec; if not, we could raise an error.
+    await helpers.aappend_audit_line(f"order:{name}")
+    return {"status": "created"}

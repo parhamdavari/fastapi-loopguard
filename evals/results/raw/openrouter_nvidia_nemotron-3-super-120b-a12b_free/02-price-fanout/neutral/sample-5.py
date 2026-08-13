@@ -1,0 +1,19 @@
+from fastapi import FastAPI, Query
+import helpers
+import asyncio
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def portfolio(symbols: str = Query(...)):
+    # Split the comma‑separated list and strip whitespace
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    
+    # Fetch all prices concurrently using the async helper
+    tasks = [helpers.afetch_price(sym) for sym in symbol_list]
+    prices_list = await asyncio.gather(*tasks)
+    
+    # Build the result dictionary
+    prices = {sym: price for sym, price in zip(symbol_list, prices_list)}
+    return {"prices": prices}

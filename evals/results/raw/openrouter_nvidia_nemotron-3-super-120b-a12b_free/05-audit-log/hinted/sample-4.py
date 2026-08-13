@@ -1,0 +1,12 @@
+from fastapi import FastAPI, JSONResponse
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def create_order(order: dict):
+    item = order.get("item")
+    await helpers.aappend_audit_line(f"order:{item}")
+    return JSONResponse(status_code=201, content={"status": "created"})

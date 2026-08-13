@@ -1,0 +1,72 @@
+```python
+from fastapi import FastAPI, Body
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/documents")
+async def save_document(
+    name: str = Body(..., embed=True),
+    text: str = Body(..., embed=True),
+):
+    bytes_written = await asyncio.to_thread(helpers.save_document, name, text)
+    return JSONResponse(
+        {"bytes": bytes_written},
+        status_code=201,
+    )
+```
+
+Wait, let me reconsider the request body structure. The task specifies the endpoint should accept `{"name": "<name>", "text": "<text>"}`. With `Body(..., embed=True)`, FastAPI would expect the body to be wrapped in another object. Let me fix this according to the required input format.
+
+Actually no - in FastAPI, when you use `Body(..., embed=True)`, it means the body parameters will be nested under a key named after the parameter. For example, if we have `name: str = Body(..., embed=True)`, the expected body would be `{"name": {"name": "<name>"}}` - which isn't what we want.
+
+However, since we're passing multiple values (`name` and `text`) and they're at the root level of the JSON body, we can just define them directly as Pydantic models or use `Body()` without `embed=True`. In FastAPI, when multiple body parameters are defined, they're automatically combined into one body by a process called "Body embedding".
+
+Let me revise my approach:
+
+When defining multiple body parameters (like `name` and `text`) in FastAPI, they are automatically merged into a single object in the request body without needing explicit model definitions. This matches our required format.
+
+So the corrected version:
+
+```python
+from fastapi import FastAPI, Body
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers
+
+app = FastAPI()
+
+@app.post("/documents")
+async def save_document(
+    name: str = Body(...),
+    text: str = Body(...),
+):
+    bytes_written = await asyncio.to_thread(helpers.save_document, name, text)
+    return JSONResponse(
+        {"bytes": bytes_written},
+        status_code=201,
+    )
+```
+
+But there's still an issue here: When using `Body()` individually for two fields, FastAPI treats them as separate body parameters and wraps them under their own keys, resulting in request bodies like:
+```json
+{"name": "<name>", "text": "<text>"}
+```
+
+Wait, that actually looks correct! Let me double-check.
+
+No, that's not how it works. When using `Body()` for individual parameters, FastAPI expects each one to be part of the top-level JSON object, so the body becomes:
+```json
+{"name": "<name>", "text": "<text>"}
+```
+
+This is exactly the format we want! So the implementation should be correct.
+
+However, some best practices suggest using a Pydantic model for complex requests. But since we only have two simple string parameters, inline declaration is acceptable.
+
+Let me finalize the code block below:

@@ -1,0 +1,19 @@
+```python
+from fastapi import FastAPI, Body
+from pydantic import BaseModel
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+class DocumentCreate(BaseModel):
+    name: str
+    text: str
+
+
+@app.post("/documents", status_code=201)
+def create_document(document: DocumentCreate):
+    bytes_written = helpers.save_document(document.name, document.text)
+    return {"bytes": bytes_written}
+```

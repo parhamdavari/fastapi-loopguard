@@ -1,0 +1,16 @@
+from fastapi import FastAPI, status
+from pydantic import BaseModel
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+class OrderRequest(BaseModel):
+    item: str
+
+
+@app.post("/orders", status_code=status.HTTP_201_CREATED)
+def create_order(order: OrderRequest) -> dict:
+    processed = helpers.process_order(order.dict())
+    return processed

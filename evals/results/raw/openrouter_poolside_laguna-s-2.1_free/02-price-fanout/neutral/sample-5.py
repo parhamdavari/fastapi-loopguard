@@ -1,0 +1,15 @@
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import asyncio
+import helpers
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def portfolio(symbols: str):
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
+    prices_list = await asyncio.gather(*tasks)
+    prices = dict(zip(symbol_list, prices_list))
+    return JSONResponse(content={"prices": prices}, status_code=200)

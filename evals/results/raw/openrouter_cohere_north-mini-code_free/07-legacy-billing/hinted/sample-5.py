@@ -1,0 +1,29 @@
+from fastapi import FastAPI, Depends
+
+import helpers
+import asyncio
+
+app = FastAPI()
+
+billing = helpers.BillingClient()  # the shared client instance
+
+
+def get_billing() -> helpers.BillingClient:
+    """FastAPI dependency providing the billing client."""
+    return billing
+
+
+@app.post("/charges", status_code=201)
+async def charge_endpoint(
+    payload: dict,
+    billing_client: helpers.BillingClient = Depends(get_billing),
+):
+    """
+    Accepts a JSON object with an "amount" field, charges it via the billing client,
+    and returns the receipt ID. The blocking charge operation is offloaded to a thread
+    to keep the event loop free.
+    """
+    amount = payload["amount"]
+    loop = asyncio.get_event_loop()
+    receipt = await loop.run_in_executor(None, billing_client.charge, amount)
+    return {"receipt": receipt}

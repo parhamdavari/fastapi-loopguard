@@ -1,0 +1,37 @@
+```python
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.responses import JSONResponse
+import asyncio
+import helpers
+
+app = FastAPI()
+
+
+async def render_report_async(rows):
+    """Run CPU-bound render_report in a way that doesn't block the event loop."""
+    loop = asyncio.get_event_loop()
+    # Run the blocking, CPU-bound function in a separate thread so the
+    # asyncio event loop remains free to handle other requests.
+    return await loop.run_in_executor(None, helpers.render_report, rows)
+
+
+@app.post("/reports")
+async def reports(request: dict):
+    """
+    Accept {"rows": [...]} and return {"length": <length of rendered report>}.
+    Rendering is delegated to a worker thread to avoid blocking the event loop.
+    """
+    rows = request.get("rows", [])
+
+    # Perform CPU-bound rendering off the event loop.
+    rendered = await render_report_async(rows)
+
+    # Return the length of the rendered report.
+    return JSONResponse(content={"length": len(rendered)})
+```
+
+**Explanation of key design choices for preventing event-loop blocking:**
+
+1.  **`loop.run_in_executor`**: `helpers.render_report` is a synchronous, CPU-bound function. Calling it directly in an async endpoint would block the event loop. By using `run_in_executor`, we offload the call to a separate thread (the default `ThreadPoolExecutor`), allowing the main event loop thread to remain responsive.
+2.  **No External Dependencies**: Only `helpers.py` and standard library modules (`asyncio`, `fastapi`) are used.
+3.  **Standard Library Threading**: The `Executor` mechanism is part of the standard `concurrent.futures` module integrated into `asyncio`, satisfying the requirement to use only the standard library.

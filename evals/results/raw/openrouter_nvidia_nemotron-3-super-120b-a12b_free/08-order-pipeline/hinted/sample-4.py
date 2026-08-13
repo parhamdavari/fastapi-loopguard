@@ -1,0 +1,17 @@
+import asyncio
+from fastapi import FastAPI, Request
+
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+async def create_order(request: Request):
+    order_data = await request.json()
+    # Offload the blocking helpers.process_order to a thread pool
+    loop = asyncio.get_event_loop()
+    processed_order = await loop.run_in_executor(
+        None, helpers.process_order, order_data
+    )
+    return processed_order

@@ -90,7 +90,7 @@ Writes structured logs listing the requests that were in flight:
 
 ## Testing AI-Generated Code
 
-Measured, not assumed: asked for ordinary endpoints with no warning, GPT-4.1 blocked the event loop in 21 of 40 samples ([benchmark](evals/README.md#results), N=5 per task, 2026-08-12). One sentence of instruction removed the problem — the bundled pytest plugin is that sentence, enforced. It turns blocking into a red test and a machine-readable report the agent can fix from, with no per-test annotations:
+Measured, not assumed: asked for ordinary endpoints with no warning, every one of seven benchmarked models blocked the event loop — GPT-4.1 in 21 of 40 samples ([benchmark](evals/README.md#results), N=5 per task, 2026-08). One sentence of instruction removed the problem in all 280 hinted samples, for every model — the bundled pytest plugin is that sentence, enforced. It turns blocking into a red test and a machine-readable report the agent can fix from, with no per-test annotations:
 
 ```ini
 # pytest.ini

@@ -1,0 +1,15 @@
+```python
+from fastapi import FastAPI, BackgroundTasks
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def create_order(payload: dict, background_tasks: BackgroundTasks):
+    item = payload.get("item")
+    line = f"order:{item}"
+    background_tasks.add_task(helpers.aappend_audit_line, line)
+    return {"status": "created"}, 201
+```

@@ -1,0 +1,22 @@
+{
+  "task": "07-legacy-billing",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "=========================== short test summary info ============================",
+    "FAILED test_checks.py::test_charges_amount - assert 422 == 201",
+    "1 failed in 0.20s"
+  ],
+  "requested_model": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+  "returned_model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "condition": "hinted",
+  "sample": 2,
+  "temperature": 1.0,
+  "run_date": "2026-08-13T12:02:13+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

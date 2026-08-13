@@ -1,0 +1,24 @@
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+import asyncio
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def create_order(request: Request):
+    try:
+        order_data = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    if not isinstance(order_data, dict) or "item" not in order_data:
+        raise HTTPException(status_code=400, detail="Missing required field: 'item'")
+
+    try:
+        processed_order = await asyncio.to_thread(helpers.process_order, order_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to process order")
+
+    return JSONResponse(content=processed_order, status_code=201)
