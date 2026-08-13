@@ -1,0 +1,22 @@
+{
+  "task": "07-legacy-billing",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "=========================== short test summary info ============================",
+    "FAILED test_checks.py::test_charges_amount - assert 200 == 201",
+    "1 failed in 0.27s"
+  ],
+  "requested_model": "openrouter:poolside/laguna-s-2.1:free",
+  "returned_model_id": "poolside/laguna-s-2.1:free",
+  "condition": "neutral",
+  "sample": 1,
+  "temperature": 1.0,
+  "run_date": "2026-08-12T19:57:14+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

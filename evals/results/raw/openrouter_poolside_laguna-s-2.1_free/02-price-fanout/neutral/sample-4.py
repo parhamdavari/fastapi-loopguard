@@ -1,0 +1,20 @@
+from fastapi import FastAPI
+from typing import List, Dict
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+def portfolio(symbols: str):
+    symbol_list = [s for s in symbols.split(",") if s]
+    
+    async def fetch_all():
+        tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
+        return await asyncio.gather(*tasks) if tasks else []
+
+    results = asyncio.run(fetch_all()) if symbol_list else []
+    prices = {symbol: price for symbol, price in zip(symbol_list, results)}
+    
+    return {"prices": prices}

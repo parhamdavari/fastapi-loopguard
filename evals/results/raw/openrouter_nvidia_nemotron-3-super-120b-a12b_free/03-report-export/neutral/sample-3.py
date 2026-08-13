@@ -1,0 +1,11 @@
+from fastapi import FastAPI, Body
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/reports")
+def create_report(rows: list = Body(..., embed=True)):
+    rendered_report = helpers.render_report(rows)
+    return {"length": len(rendered_report)}

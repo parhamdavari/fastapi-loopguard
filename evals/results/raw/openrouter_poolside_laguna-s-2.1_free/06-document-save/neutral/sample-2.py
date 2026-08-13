@@ -1,0 +1,17 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+class Document(BaseModel):
+    name: str
+    text: str
+
+
+@app.post("/documents")
+def create_document(doc: Document):
+    saved_bytes = helpers.save_document(doc.name, doc.text)
+    return {"bytes": saved_bytes}, 201

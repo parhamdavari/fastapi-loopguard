@@ -1,0 +1,21 @@
+{
+  "task": "01-user-lookup",
+  "functional": true,
+  "non_blocking": true,
+  "score": 1,
+  "flagged": [],
+  "detail": "all checks passed without blocking",
+  "pytest_tail": [
+    ".                                                                        [100%]",
+    "1 passed in 0.31s"
+  ],
+  "requested_model": "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
+  "returned_model_id": "nvidia/nemotron-3-super-120b-a12b:free",
+  "condition": "neutral",
+  "sample": 3,
+  "temperature": 1.0,
+  "run_date": "2026-08-13T07:23:36+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

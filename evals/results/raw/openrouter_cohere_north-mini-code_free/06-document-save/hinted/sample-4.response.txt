@@ -1,0 +1,15 @@
+```python
+from fastapi import FastAPI
+import asyncio
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/documents", status_code=201)
+async def save_document(name: str, text: str):
+    # Run the blocking helper in a separate thread to avoid blocking the event loop
+    bytes_len = await asyncio.to_thread(helpers.save_document, name, text)
+    return {"bytes": bytes_len}
+```

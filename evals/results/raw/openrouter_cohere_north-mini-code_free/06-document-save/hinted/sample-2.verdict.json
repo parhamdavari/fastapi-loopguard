@@ -1,0 +1,22 @@
+{
+  "task": "06-document-save",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "=========================== short test summary info ============================",
+    "FAILED test_checks.py::test_saves_document - assert 200 == 201",
+    "1 failed in 0.31s"
+  ],
+  "requested_model": "openrouter:cohere/north-mini-code:free",
+  "returned_model_id": "cohere/north-mini-code:free",
+  "condition": "hinted",
+  "sample": 2,
+  "temperature": 1.0,
+  "run_date": "2026-08-13T12:31:34+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

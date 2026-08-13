@@ -1,0 +1,29 @@
+To solve this, we need to implement a FastAPI endpoint that processes a CPU-bound report rendering task without blocking the event loop. The key challenge is ensuring that the synchronous, CPU-intensive `helpers.render_report()` function doesn't block the event loop which would prevent handling other incoming requests.
+
+### Approach
+The solution involves offloading the CPU-bound task to a separate thread using `asyncio.to_thread()`. This function allows us to run a synchronous function in a separate thread, thereby keeping the event loop free to handle other tasks concurrently. By doing this, the event loop can continue processing other incoming requests while the report rendering happens in the background thread.
+
+### Solution Code
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/reports")
+async def generate_report(request_body: dict):
+    rows = request_body["rows"]
+    rendered_report = await asyncio.to_thread(helpers.render_report, rows)
+    return JSONResponse({"length": len(rendered_report)}, status_code=200)
+```
+
+### Explanation
+1. **Endpoint Definition**: The endpoint `POST /reports` is defined using FastAPI's `@app.post` decorator. It expects a JSON body containing a list under the "rows" key.
+2. **Offloading CPU Work**: The synchronous `helpers.render_report(rows)` function is executed in a separate thread using `asyncio.to_thread()`. This prevents blocking the event loop.
+3. **Returning the Result**: After the rendering is complete, the length of the resulting string is returned in a JSON response with a 200 status code.
+
+This approach efficiently handles the CPU-bound task without blocking the event loop, ensuring that the application remains responsive to other incoming requests.

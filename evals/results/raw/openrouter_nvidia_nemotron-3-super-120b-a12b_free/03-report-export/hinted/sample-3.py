@@ -1,0 +1,13 @@
+from fastapi import FastAPI
+import helpers
+import asyncio
+
+app = FastAPI()
+
+
+@app.post("/reports")
+async def create_report(payload: dict):
+    rows = payload.get("rows", [])
+    loop = asyncio.get_running_loop()
+    rendered = await loop.run_in_executor(None, helpers.render_report, rows)
+    return {"length": len(rendered)}

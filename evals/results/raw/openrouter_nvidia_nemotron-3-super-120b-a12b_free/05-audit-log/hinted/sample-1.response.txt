@@ -1,0 +1,16 @@
+```python
+from fastapi import FastAPI, Body, HTTPException
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+async def create_order(payload: dict = Body(...)):
+    item_name = payload.get("item")
+    if not item_name:
+        raise HTTPException(status_code=400, detail="Missing 'item' field")
+    await helpers.aappend_audit_line(f"order:{item_name}")
+    return {"status": "created"}
+```

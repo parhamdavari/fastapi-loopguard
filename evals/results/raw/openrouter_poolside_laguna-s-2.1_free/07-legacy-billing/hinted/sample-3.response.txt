@@ -1,0 +1,36 @@
+```python
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+from typing import Any
+
+import helpers
+
+app = FastAPI()
+
+billing = helpers.BillingClient()  # the shared client instance
+
+
+def get_billing() -> helpers.BillingClient:
+    """FastAPI dependency providing the billing client."""
+    return billing
+
+
+async def async_charge(billing_client: helpers.BillingClient, amount: float) -> str:
+    loop = asyncio.get_event_loop()
+    # Run the blocking charge() call in a thread to avoid blocking the event loop
+    return await loop.run_in_executor(None, billing_client.charge, amount)
+
+
+@app.post("/charges")
+async def charges(payload: dict[str, Any]) -> JSONResponse:
+    amount = payload.get("amount")
+    if amount is None or not isinstance(amount, (int, float)):
+        raise HTTPException(status_code=400, detail="Invalid amount")
+
+    billing_client = get_billing()
+    receipt = await async_charge(billing_client, float(amount))
+    return JSONResponse(content={"receipt": receipt}, status_code=201)
+```

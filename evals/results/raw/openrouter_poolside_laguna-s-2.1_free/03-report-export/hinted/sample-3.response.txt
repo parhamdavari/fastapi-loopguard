@@ -1,0 +1,26 @@
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import asyncio
+
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+async def render_report_async(rows: list) -> str:
+    """Run the CPU-bound render_report in a thread to keep the event loop free."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, helpers.render_report, rows)
+
+
+@app.post("/reports")
+async def create_report(payload: dict):
+    try:
+        rows = payload["rows"]
+    except (KeyError, TypeError):
+        return JSONResponse(status_code=400, content={"detail": "Missing 'rows' key"})
+
+    rendered = await render_report_async(rows)
+    return {"length": len(rendered)}
+```

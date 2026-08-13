@@ -1,0 +1,13 @@
+import asyncio
+
+from fastapi import FastAPI, Body
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+async def process_order(order: dict = Body(...)):
+    loop = asyncio.get_running_loop()
+    processed_order = await loop.run_in_executor(None, helpers.process_order, order)
+    return processed_order

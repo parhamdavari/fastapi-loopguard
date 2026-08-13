@@ -1,0 +1,27 @@
+from fastapi import FastAPI, Depends, HTTPException
+
+import helpers
+
+app = FastAPI()
+
+billing = helpers.BillingClient()
+
+def get_billing() -> helpers.BillingClient:
+    """FastAPI dependency providing the billing client."""
+    return billing
+
+@app.post("/charges")
+def create_charge(request: dict, billing_client: helpers.BillingClient = Depends(get_billing)):
+    """
+    Accept a charge request with an amount and return a receipt ID.
+    """
+    amount = request.get("amount")
+    if amount is None:
+        raise HTTPException(status_code=422, detail="Missing amount")
+    # Convert to float to satisfy the BillingClient.charge signature
+    try:
+        amount_float = float(amount)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Invalid amount")
+    receipt = billing_client.charge(amount_float)
+    return {"receipt": receipt}, 201

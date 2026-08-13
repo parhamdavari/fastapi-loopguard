@@ -1,0 +1,17 @@
+from fastapi import FastAPI, status
+from pydantic import BaseModel
+import helpers
+import asyncio
+
+app = FastAPI()
+
+
+class Document(BaseModel):
+    name: str
+    text: str
+
+
+@app.post("/documents", status_code=status.HTTP_201_CREATED)
+async def create_document(doc: Document) -> dict[str, int]:
+    bytes_written = await asyncio.to_thread(helpers.save_document, doc.name, doc.text)
+    return {"bytes": bytes_written}

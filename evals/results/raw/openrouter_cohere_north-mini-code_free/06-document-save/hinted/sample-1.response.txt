@@ -1,0 +1,25 @@
+```python
+from fastapi import FastAPI
+import helpers  # noqa: F401  (the provided API)
+import asyncio
+
+app = FastAPI()
+
+
+@app.post("/documents")
+async def create_document(payload: dict):
+    """
+    Accept a document definition, persist it asynchronously,
+    and return the number of bytes written.
+    """
+    name = payload["name"]
+    text = payload["text"]
+
+    # Offload the blocking I/O to a thread pool to avoid blocking the event loop
+    loop = asyncio.get_running_loop()
+    bytes_written = await loop.run_in_executor(
+        None, helpers.save_document, name, text
+    )
+
+    return {"bytes": bytes_written}, 201
+```

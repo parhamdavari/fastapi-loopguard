@@ -1,0 +1,9 @@
+from fastapi import FastAPI, Body, status
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=status.HTTP_201_CREATED)
+def create_order(order: dict = Body(...)):
+    return helpers.process_order(order)

@@ -1,0 +1,12 @@
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import asyncio
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def process_order_endpoint(order: dict):
+    processed_order = await asyncio.to_thread(helpers.process_order, order)
+    return JSONResponse(content=processed_order, status_code=201)

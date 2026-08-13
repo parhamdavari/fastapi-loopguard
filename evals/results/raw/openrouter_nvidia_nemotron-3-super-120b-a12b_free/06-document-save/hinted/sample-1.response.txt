@@ -1,0 +1,13 @@
+```python
+from fastapi import FastAPI, Body
+import asyncio
+import helpers
+
+app = FastAPI()
+
+@app.post("/documents", status_code=201)
+async def create_document(name: str = Body(...), text: str = Body(...)):
+    loop = asyncio.get_event_loop()
+    bytes_written = await loop.run_in_executor(None, helpers.save_document, name, text)
+    return {"bytes": bytes_written}
+```

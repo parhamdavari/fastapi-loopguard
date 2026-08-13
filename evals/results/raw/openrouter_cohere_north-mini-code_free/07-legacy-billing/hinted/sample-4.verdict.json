@@ -1,0 +1,22 @@
+{
+  "task": "07-legacy-billing",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "ERROR test_checks.py",
+    "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+    "1 error in 0.07s"
+  ],
+  "requested_model": "openrouter:cohere/north-mini-code:free",
+  "returned_model_id": "cohere/north-mini-code:free",
+  "condition": "hinted",
+  "sample": 4,
+  "temperature": 1.0,
+  "run_date": "2026-08-13T13:06:21+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

@@ -1,0 +1,30 @@
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+import helpers  # the provided API
+
+app = FastAPI()
+
+# Reusable thread pool for running blocking calls off the event loop
+_executor = ThreadPoolExecutor(max_workers=8)
+
+
+def _submit(order: dict) -> dict:
+    """Helper that runs the synchronous processing in a thread."""
+    return helpers.process_order(order)
+
+
+@app.post("/orders")
+async def create_order(order: dict):
+    """Process an incoming order without blocking the event loop."""
+    loop = asyncio.get_event_loop()
+    try:
+        processed = await loop.run_in_executor(_executor, _submit, order)
+    except Exception as exc:
+        return JSONResponse(
+            {"detail": f"Order processing failed: {exc}"},
+            status_code=500,
+        )
+    return JSONResponse(processed, status_code=201)

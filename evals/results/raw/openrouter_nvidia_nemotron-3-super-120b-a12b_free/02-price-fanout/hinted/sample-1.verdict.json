@@ -1,0 +1,22 @@
+{
+  "task": "02-price-fanout",
+  "functional": false,
+  "non_blocking": true,
+  "score": 0,
+  "flagged": [],
+  "detail": "functional checks failed",
+  "pytest_tail": [
+    "=========================== short test summary info ============================",
+    "FAILED test_checks.py::test_prices_fetched_concurrently - NameError: name 'as...",
+    "1 failed in 0.27s"
+  ],
+  "requested_model": "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
+  "returned_model_id": "nvidia/nemotron-3-super-120b-a12b:free",
+  "condition": "hinted",
+  "sample": 1,
+  "temperature": 1.0,
+  "run_date": "2026-08-13T08:23:31+00:00",
+  "python_version": "3.14.3",
+  "loopguard_version": "0.6.1",
+  "threshold_ms": 50
+}

@@ -1,0 +1,12 @@
+import asyncio
+from fastapi import Body, FastAPI
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/orders")
+async def create_order(order: dict = Body(...)):
+    processed = await asyncio.to_thread(helpers.process_order, order)
+    return processed, 201

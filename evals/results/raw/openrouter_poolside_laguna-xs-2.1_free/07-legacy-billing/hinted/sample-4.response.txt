@@ -1,0 +1,28 @@
+```python
+import asyncio
+from fastapi import FastAPI, Depends
+from pydantic import BaseModel
+
+import helpers
+
+app = FastAPI()
+
+billing = helpers.BillingClient()
+
+
+def get_billing() -> helpers.BillingClient:
+    return billing
+
+
+class ChargeRequest(BaseModel):
+    amount: float
+
+
+@app.post("/charges", status_code=201)
+async def create_charge(
+    request: ChargeRequest,
+    billing_client: helpers.BillingClient = Depends(get_billing)
+):
+    receipt = await asyncio.to_thread(billing_client.charge, request.amount)
+    return {"receipt": receipt}
+```

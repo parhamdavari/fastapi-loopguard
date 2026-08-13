@@ -1,0 +1,17 @@
+```python
+from fastapi import FastAPI, HTTPException
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/documents", status_code=201)
+def create_document(data: dict):
+    name = data.get("name")
+    text = data.get("text")
+    if name is None or text is None:
+        raise HTTPException(status_code=422, detail="Both 'name' and 'text' are required")
+    bytes_written = helpers.save_document(name, text)
+    return {"bytes": bytes_written}
+```

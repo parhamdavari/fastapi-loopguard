@@ -1,0 +1,18 @@
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+import helpers  # noqa: F401
+
+app = FastAPI()
+
+
+class Order(BaseModel):
+    item: str
+
+
+@app.post("/orders", status_code=201)
+def create_order(order: Order):
+    processed = helpers.process_order(order.dict())
+    return processed
+```

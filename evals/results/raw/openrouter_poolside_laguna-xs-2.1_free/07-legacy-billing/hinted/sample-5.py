@@ -1,0 +1,23 @@
+import asyncio
+from fastapi import FastAPI, Depends, Request
+import helpers
+
+app = FastAPI()
+
+billing = helpers.BillingClient()  # the shared client instance
+
+
+def get_billing() -> helpers.BillingClient:
+    """FastAPI dependency providing the billing client."""
+    return billing
+
+
+@app.post("/charges")
+async def create_charge(
+    request: Request,
+    billing: helpers.BillingClient = Depends(get_billing)
+):
+    data = await request.json()
+    amount = data["amount"]
+    receipt = await asyncio.to_thread(billing.charge, amount)
+    return {"receipt": receipt}, 201

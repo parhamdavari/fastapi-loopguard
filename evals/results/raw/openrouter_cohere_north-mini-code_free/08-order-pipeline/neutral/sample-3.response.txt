@@ -1,0 +1,12 @@
+```python
+from fastapi import FastAPI
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/orders", status_code=201)
+def create_order(order: dict):
+    """Process an order and return the enriched order with status 201."""
+    return helpers.process_order(order)
+```

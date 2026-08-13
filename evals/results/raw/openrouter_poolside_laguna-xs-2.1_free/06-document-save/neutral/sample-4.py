@@ -1,0 +1,11 @@
+from fastapi import FastAPI, Body
+
+import helpers
+
+app = FastAPI()
+
+
+@app.post("/documents", status_code=201)
+def save_document(name: str = Body(...), text: str = Body(...)):
+    result = helpers.save_document(name, text)
+    return {"bytes": result}

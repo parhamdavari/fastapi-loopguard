@@ -1,0 +1,15 @@
+```python
+import asyncio
+from fastapi import FastAPI, Body
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.post("/documents", status_code=201)
+async def save_document_endpoint(name: str = Body(...), text: str = Body(...)):
+    loop = asyncio.get_event_loop()
+    bytes_count = await loop.run_in_executor(None, helpers.save_document, name, text)
+    return {"bytes": bytes_count}
+```

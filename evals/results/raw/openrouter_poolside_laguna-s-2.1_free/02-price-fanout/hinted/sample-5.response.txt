@@ -1,0 +1,28 @@
+To implement the `/portfolio` endpoint, we need to:
+
+1. Accept a `symbols` query parameter as a comma-separated string.
+2. Use the asynchronous function `afetch_price` from `helpers.py` to concurrently fetch prices for all symbols.
+3. Ensure the endpoint does not block the event loop by using `async def` and `await`.
+4. Return a JSON response with a dictionary mapping each symbol to its corresponding price.
+
+We'll use `asyncio.gather` to execute all price fetches concurrently, so total latency remains close to a single fetch. Then we'll zip the symbols and prices together to construct the result dictionary.
+
+Here's the implementation:
+
+```python
+from fastapi import FastAPI
+from typing import Dict
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def portfolio(symbols: str):
+    symbol_list = symbols.split(",")
+    tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
+    prices_list = await helpers.asyncio.gather(*tasks)
+    prices = dict(zip(symbol_list, prices_list))
+    return {"prices": prices}
+```
