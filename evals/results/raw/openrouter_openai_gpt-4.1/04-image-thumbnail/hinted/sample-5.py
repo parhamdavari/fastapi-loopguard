@@ -1,18 +1,14 @@
 from fastapi import FastAPI, Request
-from concurrent.futures import ThreadPoolExecutor
+from fastapi.responses import JSONResponse
+import helpers
 import asyncio
-
-import helpers  # noqa: F401
 
 app = FastAPI()
 
-# Global ThreadPoolExecutor for running CPU-bound sync tasks
-_executor = ThreadPoolExecutor()
 
 @app.post("/thumbnail")
-async def make_thumbnail(request: Request):
+async def thumbnail(request: Request):
     data = await request.body()
     loop = asyncio.get_running_loop()
-    # Offload the CPU-bound helpers.resize_image to a thread
-    thumbnail = await loop.run_in_executor(_executor, helpers.resize_image, data)
-    return {"size": len(thumbnail)}
+    thumbnail_bytes = await loop.run_in_executor(None, helpers.resize_image, data)
+    return JSONResponse({"size": len(thumbnail_bytes)})

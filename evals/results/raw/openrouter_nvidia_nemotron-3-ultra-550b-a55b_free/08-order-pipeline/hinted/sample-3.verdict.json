@@ -1,15 +1,16 @@
 {
   "task": "08-order-pipeline",
   "functional": false,
-  "non_blocking": true,
+  "non_blocking": null,
+  "measured": false,
   "score": 0,
   "flagged": [],
-  "detail": "functional checks failed",
-  "pytest_tail": [
-    "ERROR test_checks.py",
-    "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
-    "1 error in 0.06s"
-  ],
+  "detail": "empty solution file: generation produced no code",
+  "returncode": null,
+  "tests_run": 0,
+  "trap_calls": 0,
+  "pytest_tail": [],
+  "stderr_tail": [],
   "requested_model": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
   "returned_model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "condition": "hinted",

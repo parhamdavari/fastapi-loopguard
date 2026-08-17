@@ -1,18 +1,16 @@
 from fastapi import FastAPI, Query
-from typing import Dict, List
-import helpers
+from typing import Dict
 import asyncio
+
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
 
 
 @app.get("/portfolio")
-async def get_portfolio(symbols: str = Query(..., description="Comma-separated list of symbols")):
+async def get_portfolio(symbols: str = Query(...)):
+    # Split comma-separated symbols, strip spaces, filter out blanks
     symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
-    if not symbol_list:
-        return {"prices": {}}
-
-    coros = [helpers.afetch_price(symbol) for symbol in symbol_list]
-    prices = await asyncio.gather(*coros)
-    result: Dict[str, float] = dict(zip(symbol_list, prices))
-    return {"prices": result}
+    # Fire async calls concurrently
+    prices = await asyncio.gather(*(helpers.afetch_price(s) for s in symbol_list))
+    return {"prices": dict(zip(symbol_list, prices))}

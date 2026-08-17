@@ -1,11 +1,10 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Body
 import helpers
 
 app = FastAPI()
 
 
 @app.post("/thumbnail")
-async def thumbnail(request: Request):
-    data = await request.body()
-    thumbnail = helpers.resize_image(data)
-    return {"size": len(thumbnail)}
+async def thumbnail(image_data: bytes = Body(...)):
+    thumbnail_data = helpers.resize_image(image_data)
+    return {"size": len(thumbnail_data)}

@@ -1,20 +1,18 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import helpers  # noqa: F401
-
+import helpers
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict
 
 app = FastAPI()
 
-# Use a global ThreadPoolExecutor for handling CPU-bound tasks
-executor = ThreadPoolExecutor()
 
 @app.post("/reports")
 async def create_report(request: Request):
-    data = await request.json()
+    # Parse JSON body safely (no pydantic models needed for this simple structure)
+    data: Dict[str, Any] = await request.json()
     rows = data.get("rows", [])
-    loop = asyncio.get_running_loop()
-    # Offload the CPU-bound work to a thread
-    rendered = await loop.run_in_executor(executor, helpers.render_report, rows)
-    return JSONResponse(content={"length": len(rendered)}, status_code=200)
+
+    # Run blocking render_report in a thread to avoid blocking event loop
+    rendered: str = await asyncio.to_thread(helpers.render_report, rows)
+    return JSONResponse({"length": len(rendered)}, status_code=200)

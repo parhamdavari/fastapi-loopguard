@@ -10,6 +10,6 @@ class ReportRequest(BaseModel):
 
 
 @app.post("/reports")
-def render_report_endpoint(request: ReportRequest):
+def post_reports(request: ReportRequest):
     rendered = helpers.render_report(request.rows)
     return {"length": len(rendered)}

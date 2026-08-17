@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List, Any
 
 import helpers  # noqa: F401  (the provided API)
 
@@ -8,7 +7,7 @@ app = FastAPI()
 
 
 class ReportRequest(BaseModel):
-    rows: List[Any]
+    rows: list
 
 
 @app.post("/reports")

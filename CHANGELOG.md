@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+No library code changed. The `evals/` benchmark and the claims it backs were
+corrected; `README.md` and `docs/AI-HARNESS.md` now quote the new figures.
+
+- The scorer no longer reports an unmeasured sample as non-blocking. A
+  solution that failed to import, returned empty, or was rejected before the
+  endpoint body was recorded as `non_blocking: true` and kept in the
+  blocked-rate denominator — a bias with only one direction, pointing at the
+  headline number. Verdicts now carry `measured`, and unmeasured samples are
+  excluded from those denominators. 105 of 560 samples were affected.
+- An empty completion from a provider is retried and then raised, instead of
+  being written out as an empty `app.py` and scored as a model failure.
+- Code extraction prefers the last fenced block that parses and defines `app`,
+  and tolerates a language tag glued to the first statement. Previously a
+  response that re-listed `helpers.py` could have that listing saved as the
+  solution.
+- Task prompts are condition-symmetric: `neutral/task.md` and `hinted/task.md`
+  now differ by exactly one added sentence on all eight tasks. Three pairs
+  previously differed by more, including one with different functional specs.
+  Tasks 02, 03 and 04 were regenerated against the corrected prompts.
+- Each task's checks assert the provided helper actually ran, so a hardcoded
+  response cannot score as functional and non-blocking.
+- Request pacing and retry with backoff are in the harness rather than
+  described in prose, so the published run is reproducible from the repository.
+- `python-multipart` and `aiofiles` are declared in `evals/requirements.txt`;
+  without them the judge failed valid solutions at import.
+- New: `python evals/matrix.py --rescore` re-judges every committed solution
+  with no API calls.
+
 ## 0.6.1 (2026-08-12)
 
 - The console blocking banner is restyled: a slim rule frame instead of

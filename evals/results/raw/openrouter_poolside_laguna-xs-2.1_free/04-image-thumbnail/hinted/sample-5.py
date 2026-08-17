@@ -1,12 +1,12 @@
 from fastapi import FastAPI, Request
-import helpers
 import asyncio
+import helpers  # noqa: F401
 
 app = FastAPI()
+
 
 @app.post("/thumbnail")
 async def create_thumbnail(request: Request):
     data = await request.body()
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, helpers.resize_image, data)
-    return {"size": len(result)}
+    thumbnail = await asyncio.to_thread(helpers.resize_image, data)
+    return {"size": len(thumbnail)}

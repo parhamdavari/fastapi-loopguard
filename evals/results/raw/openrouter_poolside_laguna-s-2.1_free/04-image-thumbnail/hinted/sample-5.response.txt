@@ -1,35 +1,32 @@
-To solve this problem, we need to implement a FastAPI endpoint that processes an image to create a thumbnail without blocking the event loop. The resizing is a CPU-bound task, so we must offload it to a separate thread to prevent blocking the event loop.
+To solve this problem, we need to implement a FastAPI endpoint that processes image data to generate a thumbnail without blocking the event loop. Since the provided `resize_image` function is CPU-bound, we should offload the processing to a separate thread to maintain non-blocking behavior.
 
 ### Approach
-The approach involves using FastAPI's ability to handle async requests while offloading CPU-bound tasks to threads. Although FastAPI does not provide a built-in decorator like Flask's `run_in_threadpool`, we can achieve this by using Python's `threading` module to run the CPU-bound `resize_image` function in a separate thread. However, integrating this with the async request handling requires careful management.
-
-Alternatively, we can use `asyncio.to_thread` from the standard library, which simplifies running a synchronous function in a thread. However, since the problem specifies using only `helpers.py`, FastAPI's `Request`, and the standard library, `asyncio.to_thread` is a suitable choice as it is part of the standard library starting from Python 3.9. To ensure compatibility and avoid potential issues with Python versions, we can also use a direct threading approach with `loop.run_in_executor`.
-
-The solution involves:
-1. Reading the raw bytes from the incoming request.
-2. Running the `resize_image` function in a thread to avoid blocking the event loop.
-3. Returning the size of the resulting thumbnail bytes in the response.
+1. **Non-blocking Event Loop**: Use FastAPI's `run_in_threadpool` utility to run the CPU-bound `resize_image` function in a thread pool, preventing the event loop from being blocked.
+2. **Async Endpoint**: Define the endpoint as `async` to ensure compatibility with FastAPI's asynchronous capabilities.
+3. **Request Handling**: Accept the raw image bytes directly from the request body.
+4. **Response**: Return the size of the thumbnail bytes in a JSON response with a status code of 200.
 
 ### Solution Code
+
 ```python
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-import asyncio
-import helpers
+from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
+
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
 
+
 @app.post("/thumbnail")
-async def thumbnail(request: Request):
-    data = await request.body()
-    loop = asyncio.get_event_loop()
-    thumbnail_data = await loop.run_in_executor(None, helpers.resize_image, data)
-    return JSONResponse({"size": len(thumbnail_data)})
+async def thumbnail(data: bytes) -> dict:
+    thumbnail_data = await run_in_threadpool(helpers.resize_image, data)
+    return {"size": len(thumbnail_data)}
 ```
 
 ### Explanation
-1. **Reading the Request Body**: The `await request.body()` call retrieves the raw bytes from the request body asynchronously, ensuring the event loop is not blocked during this step.
-2. **Running in a Thread**: The `loop.run_in_executor(None, helpers.resize_image, data)` schedules the CPU-bound `resize_image` function to run in a separate thread (using the default thread pool executor). This prevents the event loop from being blocked during the resizing process.
-3. **Returning the Response**: After obtaining the resized image (thumbnail bytes) from the thread, the response is constructed with the size of the thumbnail bytes using `JSONResponse` to ensure the correct media type and efficient serialization.
+- **Importing Utilities**: We import `run_in_threadpool` from `fastapi.concurrency` to handle the CPU-bound task asynchronously.
+- **Endpoint Definition**: The `thumbnail` function is defined as `async` to avoid blocking the event loop.
+- **Processing Data**: We pass the `resize_image` function and the incoming image data to `run_in_threadpool`, which runs the function in a separate thread.
+- **Response**: After obtaining the thumbnail bytes, we return their length in a JSON object with a 200 status code.
 
-This approach efficiently handles the CPU-bound task without blocking the event loop, adhering to both the problem's constraints and FastAPI's best practices for integrating background tasks.
+This approach ensures that the event loop remains unblocked while the CPU-intensive image resizing operation is handled efficiently in a separate thread.

@@ -1,5 +1,6 @@
 ```python
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 
 import helpers
 
@@ -7,9 +8,16 @@ app = FastAPI()
 
 
 @app.post("/reports")
-async def reports(request: Request):
-    payload = await request.json()
-    rows = payload.get("rows", [])
+async def create_report(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    
+    rows = body.get("rows")
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail="Missing or invalid 'rows'")
+    
     rendered = helpers.render_report(rows)
-    return {"length": len(rendered)}
+    return JSONResponse(content={"length": len(rendered)}, status_code=200)
 ```

@@ -1,17 +1,5 @@
-To implement the `/portfolio` endpoint, we need to:
-
-1. Accept a `symbols` query parameter as a comma-separated string.
-2. Use the asynchronous function `afetch_price` from `helpers.py` to concurrently fetch prices for all symbols.
-3. Ensure the endpoint does not block the event loop by using `async def` and `await`.
-4. Return a JSON response with a dictionary mapping each symbol to its corresponding price.
-
-We'll use `asyncio.gather` to execute all price fetches concurrently, so total latency remains close to a single fetch. Then we'll zip the symbols and prices together to construct the result dictionary.
-
-Here's the implementation:
-
 ```python
 from fastapi import FastAPI
-from typing import Dict
 
 import helpers  # noqa: F401  (the provided API)
 
@@ -19,10 +7,69 @@ app = FastAPI()
 
 
 @app.get("/portfolio")
-async def portfolio(symbols: str):
-    symbol_list = symbols.split(",")
-    tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
-    prices_list = await helpers.asyncio.gather(*tasks)
-    prices = dict(zip(symbol_list, prices_list))
-    return {"prices": prices}
+async def get_portfolio(prices: str = None):
+    symbols = [s for s in prices.split(",")] if prices else []
+
+    async def fetch_all(symbols):
+        tasks = [helpers.afetch_price(symbol) for symbol in symbols]
+        return await asyncio.gather(*tasks)
+
+    import asyncio
+
+    prices_list = await fetch_all(symbols)
+
+    return {symbol: price for symbol, price in zip(symbols, prices_list)}
 ```
+
+Wait, there are some mistakes here. Let me review the code again.
+
+The route parameter name should match the URL query parameter. Here is the corrected solution:
+
+```python
+from fastapi import FastAPI
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def get_portfolio(symbols: str = ''):
+    symbols_list = [s for s in symbols.split(",")] if symbols else []
+
+    async def fetch_all(symbols):
+        tasks = [helpers.afetch_price(symbol) for symbol in symbols]
+        return await asyncio.gather(*tasks)
+
+    prices_list = await fetch_all(symbols_list)
+
+    return {"prices": {symbol: price for symbol, price in zip(symbols_list, prices_list)}}
+```
+
+This looks good. The code first validates and parses the `symbols` parameter into a list of symbols. It then defines an asynchronous function `fetch_all` that schedules all `afetch_price` calls concurrently using `asyncio.gather`. Finally, it returns a dictionary containing the symbol-price mappings in the required format.
+
+However, there's a missing import for asyncio. Let me fix that:
+
+```python
+from fastapi import FastAPI
+import asyncio
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+@app.get("/portfolio")
+async def get_portfolio(symbols: str = ''):
+    symbols_list = [s for s in symbols.split(",")] if symbols else []
+
+    async def fetch_all(symbols):
+        tasks = [helpers.afetch_price(symbol) for symbol in symbols]
+        return await asyncio.gather(*tasks)
+
+    prices_list = await fetch_all(symbols_list)
+
+    return {"prices": {symbol: price for symbol, price in zip(symbols_list, prices_list)}}
+```
+
+This is the final corrected code. It now properly imports asyncio, defines the route, validates the parameter, schedules all price fetches concurrently, and returns the result in the specified format. The use of asyncio.gather ensures that all three price fetches run concurrently, allowing the request to complete well under the 0.3 second limit without blocking the event loop.

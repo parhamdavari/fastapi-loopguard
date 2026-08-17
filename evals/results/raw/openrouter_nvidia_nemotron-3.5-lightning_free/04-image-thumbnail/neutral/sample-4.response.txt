@@ -1,14 +1,13 @@
 ```python
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 
-import helpers  # noqa: F401  (the provided API)
+import helpers
 
 app = FastAPI()
 
 
 @app.post("/thumbnail")
-async def thumbnail(request: Request):
-    data = await request.body()
-    thumbnail_data = helpers.resize_image(data)
+def thumbnail(image_data: bytes):
+    thumbnail_data = helpers.resize_image(image_data)
     return {"size": len(thumbnail_data)}
 ```

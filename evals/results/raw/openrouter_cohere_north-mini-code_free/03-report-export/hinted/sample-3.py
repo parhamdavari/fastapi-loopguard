@@ -1,16 +1,14 @@
+from fastapi import FastAPI
 import asyncio
 
-from fastapi import FastAPI
-
-import helpers  # noqa: F401  (the provided API)
+import helpers  # noqa: F401
 
 app = FastAPI()
 
 
 @app.post("/reports")
-async def generate_report(payload: dict):
-    """Receive rows and return rendered report length."""
-    rows = payload["rows"]
-    # Run CPU-bound rendering in a separate thread
-    rendered = await asyncio.to_thread(helpers.render_report, rows)
-    return {"length": len(rendered)}
+async def generate_report(request: dict):
+    rows = request["rows"]
+    # Run the synchronous render_report in a separate thread to avoid blocking
+    rendered_report = await asyncio.to_thread(helpers.render_report, rows)
+    return {"length": len(rendered_report)}

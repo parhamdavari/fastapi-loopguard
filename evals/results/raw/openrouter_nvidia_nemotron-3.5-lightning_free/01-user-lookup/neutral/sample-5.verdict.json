@@ -1,15 +1,20 @@
 {
   "task": "01-user-lookup",
   "functional": false,
-  "non_blocking": true,
+  "non_blocking": null,
+  "measured": false,
   "score": 0,
   "flagged": [],
-  "detail": "functional checks failed",
+  "detail": "no test ran: the solution failed to import or collect",
+  "returncode": 2,
+  "tests_run": 0,
+  "trap_calls": 0,
   "pytest_tail": [
     "ERROR test_checks.py",
     "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
     "1 error in 0.09s"
   ],
+  "stderr_tail": [],
   "requested_model": "openrouter:nvidia/nemotron-3.5-lightning:free",
   "returned_model_id": "nvidia/nemotron-3.5-lightning:free",
   "condition": "neutral",

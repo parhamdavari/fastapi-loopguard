@@ -1,15 +1,14 @@
 ```python
 from fastapi import FastAPI, Request
 import asyncio
-import helpers
+import helpers  # noqa: F401
 
 app = FastAPI()
 
 
 @app.post("/thumbnail")
-async def create_thumbnail(request: Request):
+async def thumbnail(request: Request):
     data = await request.body()
-    loop = asyncio.get_running_loop()
-    thumbnail = await loop.run_in_executor(None, helpers.resize_image, data)
-    return {"size": len(thumbnail)}
+    thumbnail_bytes = await asyncio.to_thread(helpers.resize_image, data)
+    return {"size": len(thumbnail_bytes)}
 ```

@@ -1,15 +1,12 @@
 from fastapi import FastAPI
-from typing import List, Dict
 
-import helpers
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
 
 
 @app.get("/portfolio")
-async def get_portfolio(symbols: str):
-    symbol_list = symbols.split(',')
-    tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
-    prices_list = await helpers.asyncio.gather(*tasks)
-    prices = {symbol: price for symbol, price in zip(symbol_list, prices_list)}
-    return {"prices": prices}
+async def portfolio(symbols: str):
+    symbols_list = symbols.split(',')
+    prices = await asyncio.gather(*(helpers.afetch_price(symbol) for symbol in symbols_list))
+    return {"prices": {symbol: price for symbol, price in zip(symbols_list, prices)}}

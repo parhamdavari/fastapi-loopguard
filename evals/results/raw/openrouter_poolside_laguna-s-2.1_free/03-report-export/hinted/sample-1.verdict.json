@@ -1,21 +1,26 @@
 {
   "task": "03-report-export",
-  "functional": false,
+  "functional": true,
   "non_blocking": true,
-  "score": 0,
+  "measured": true,
+  "score": 1,
   "flagged": [],
-  "detail": "functional checks failed",
+  "detail": "all checks passed without blocking",
+  "returncode": 0,
+  "tests_run": 1,
+  "trap_calls": 1,
   "pytest_tail": [
-    "ERROR test_checks.py - RuntimeError: Form data requires \"python-multipart\" to...",
-    "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
-    "1 error in 0.21s"
+    ".                                                                        [100%]",
+    "1 passed in 0.30s"
   ],
+  "stderr_tail": [],
   "requested_model": "openrouter:poolside/laguna-s-2.1:free",
   "returned_model_id": "poolside/laguna-s-2.1:free",
+  "finish_reason": "stop",
   "condition": "hinted",
   "sample": 1,
   "temperature": 1.0,
-  "run_date": "2026-08-12T19:51:16+00:00",
+  "run_date": "2026-08-16T20:07:29+00:00",
   "python_version": "3.14.3",
   "loopguard_version": "0.6.1",
   "threshold_ms": 50

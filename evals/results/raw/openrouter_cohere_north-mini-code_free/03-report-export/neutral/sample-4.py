@@ -6,8 +6,7 @@ app = FastAPI()
 
 
 @app.post("/reports")
-def reports(body: dict):
-    """Render the report and return its length."""
-    rows = body["rows"]
+def reports(rows: list):
+    """Render a report from the given rows and return its length."""
     rendered = helpers.render_report(rows)
     return {"length": len(rendered)}

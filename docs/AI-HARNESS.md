@@ -10,9 +10,10 @@ machine-readable explanation the agent can fix from — no per-test
 annotations required.
 
 Evidence status: the premise is measured — unprompted GPT-4.1 blocked the
-loop in 21/40 benchmark samples (see [Results](../evals/README.md#results));
-whether an agent can repair from this report alone is untested and tracked
-in [#19](https://github.com/parhamdavari/fastapi-loopguard/issues/19).
+loop in 21/37 measured benchmark samples, and all seven models tested blocked
+at least once (see [Results](../evals/README.md#results)); whether an agent
+can repair from this report alone is untested and tracked in
+[#19](https://github.com/parhamdavari/fastapi-loopguard/issues/19).
 
 ## Quick start
 

@@ -1,11 +1,13 @@
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, HTTPException
 import helpers
 
 app = FastAPI()
 
 
 @app.post("/reports")
-def create_report(payload: dict = Body(...)):
-    rows = payload.get("rows", [])
-    rendered = helpers.render_report(rows)
-    return {"length": len(rendered)}
+def create_report(payload: dict):
+    rows = payload.get("rows")
+    if rows is None:
+        raise HTTPException(status_code=400, detail="'rows' field is required")
+    rendered_report = helpers.render_report(rows)
+    return {"length": len(rendered_report)}

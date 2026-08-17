@@ -1,19 +1,16 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import asyncio
-import functools
+from starlette.concurrency import run_in_threadpool
 
-import helpers  # noqa: F401
+import helpers
 
 app = FastAPI()
 
 
-@functools.lru_cache(maxsize=None)
-def _run_in_thread(rows: list):
-    return helpers.render_report(rows)
-
-
 @app.post("/reports")
-async def create_report(rows: list):
-    result = await asyncio.to_thread(helpers.render_report, rows)
-    return JSONResponse({"length": len(result)})
+async def reports(request: Request):
+    data = await request.json()
+    rows = data.get("rows", [])
+    rendered = await run_in_threadpool(helpers.render_report, rows)
+    return JSONResponse({"length": len(rendered)})

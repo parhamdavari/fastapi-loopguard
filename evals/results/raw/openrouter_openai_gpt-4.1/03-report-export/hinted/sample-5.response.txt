@@ -2,21 +2,22 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import helpers
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 app = FastAPI()
 
-executor = ThreadPoolExecutor()  # default max_workers is OK for this purpose
-
+# Create a single-threaded executor for non-blocking sync work
+executor = ThreadPoolExecutor(max_workers=4)
 
 @app.post("/reports")
 async def create_report(request: Request):
     body = await request.json()
-    rows = body.get("rows", [])
+    rows = body.get("rows")
+    if not isinstance(rows, list):
+        return JSONResponse(status_code=400, content={"error": "rows must be a list"})
+
     loop = asyncio.get_running_loop()
-    rendered = await loop.run_in_executor(
-        executor, helpers.render_report, rows
-    )
-    return JSONResponse({"length": len(rendered)})
+    rendered = await loop.run_in_executor(executor, helpers.render_report, rows)
+    return {"length": len(rendered)}
 ```

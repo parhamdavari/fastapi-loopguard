@@ -1,6 +1,11 @@
+To implement the `POST /thumbnail` endpoint without blocking the event loop, we need to offload the CPU-bound `helpers.resize_image` to a thread. Since the code must use only the standard library and `helpers.py`, `asyncio.to_thread` (available in Python 3.9+) is ideal for running blocking functions in a thread.
+
+Here is the complete `app.py`:
+
 ```python
+from fastapi import FastAPI
+from fastapi import Request
 import asyncio
-from fastapi import FastAPI, Request
 
 import helpers  # noqa: F401  (the provided API)
 
@@ -10,7 +15,6 @@ app = FastAPI()
 @app.post("/thumbnail")
 async def thumbnail(request: Request):
     data = await request.body()
-    loop = asyncio.get_event_loop()
-    thumbnail_data = await loop.run_in_executor(None, helpers.resize_image, data)
+    thumbnail_data = await asyncio.to_thread(helpers.resize_image, data)
     return {"size": len(thumbnail_data)}
 ```

@@ -1,14 +1,18 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 import asyncio
+
 import helpers
 
 app = FastAPI()
 
+
 @app.post("/reports")
-async def reports(request: Request):
-    # Parse the JSON body to extract the rows list
-    data = await request.json()
-    rows = data["rows"]
-    # Run CPU‑bound rendering in a thread to keep the event loop free
-    rendered = await asyncio.to_thread(helpers.render_report, rows)
-    return {"length": len(rendered)}
+async def generate_report(rows: list):
+    """
+    Endpoint to generate a report from rows.
+    
+    - Runs render_report in a background thread to avoid blocking the event loop
+    - Returns the length of the rendered report
+    """
+    result = await asyncio.to_thread(helpers.render_report, rows)
+    return {"length": len(result)}

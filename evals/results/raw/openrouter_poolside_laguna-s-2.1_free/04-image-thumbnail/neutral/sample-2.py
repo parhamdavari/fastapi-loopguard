@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 
-import helpers  # noqa: F401
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
 
@@ -9,4 +9,8 @@ app = FastAPI()
 async def thumbnail(request: Request):
     data = await request.body()
     thumbnail_bytes = helpers.resize_image(data)
-    return {"size": len(thumbnail_bytes)}
+    return Response(
+        content=f'{{"size": {len(thumbnail_bytes)}}}'.encode("utf-8"),
+        media_type="application/json",
+        status_code=200,
+    )

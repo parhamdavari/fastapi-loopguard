@@ -1,17 +1,17 @@
 from fastapi import FastAPI, Request
-from concurrent.futures import ThreadPoolExecutor
+from fastapi.responses import JSONResponse
 import asyncio
 
-import helpers  # noqa: F401
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
-executor = ThreadPoolExecutor()  # Can tune max_workers if needed
 
 
 @app.post("/thumbnail")
-async def create_thumbnail(request: Request):
+async def thumbnail(request: Request):
     data = await request.body()
+
     loop = asyncio.get_running_loop()
-    # Run the CPU-bound helpers.resize_image in a thread pool (do not block event loop)
-    thumbnail = await loop.run_in_executor(executor, helpers.resize_image, data)
-    return {"size": len(thumbnail)}
+    thumbnail_bytes = await loop.run_in_executor(None, helpers.resize_image, data)
+
+    return JSONResponse(content={"size": len(thumbnail_bytes)}, status_code=200)

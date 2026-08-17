@@ -1,23 +1,26 @@
 {
   "task": "03-report-export",
-  "functional": "unknown",
-  "non_blocking": false,
-  "score": 0,
-  "flagged": [
-    "test_checks.py::test_renders_report"
-  ],
-  "detail": "1 test(s) blocked the event loop",
+  "functional": true,
+  "non_blocking": true,
+  "measured": true,
+  "score": 1,
+  "flagged": [],
+  "detail": "all checks passed without blocking",
+  "returncode": 0,
+  "tests_run": 1,
+  "trap_calls": 1,
   "pytest_tail": [
-    "=========================== short test summary info ============================",
-    "FAILED test_checks.py::test_renders_report - Failed: Event loop blocking dete...",
-    "1 failed in 0.36s"
+    ".                                                                        [100%]",
+    "1 passed in 0.30s"
   ],
+  "stderr_tail": [],
   "requested_model": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
   "returned_model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finish_reason": "stop",
   "condition": "neutral",
   "sample": 2,
   "temperature": 1.0,
-  "run_date": "2026-08-13T05:28:32+00:00",
+  "run_date": "2026-08-16T20:42:57+00:00",
   "python_version": "3.14.3",
   "loopguard_version": "0.6.1",
   "threshold_ms": 50

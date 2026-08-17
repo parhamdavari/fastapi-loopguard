@@ -4,6 +4,7 @@ import asyncio
 
 app = FastAPI()
 
+
 @app.post("/thumbnail")
 async def thumbnail(request: Request):
     data = await request.body()

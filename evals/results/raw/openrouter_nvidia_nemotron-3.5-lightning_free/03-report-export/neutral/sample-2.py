@@ -1,15 +1,10 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi import FastAPI, Body
 import helpers
 
 app = FastAPI()
 
 
-class ReportRequest(BaseModel):
-    rows: list
-
-
 @app.post("/reports")
-def render_report_endpoint(request: ReportRequest):
-    rendered = helpers.render_report(request.rows)
+def post_reports(rows: list = Body(...)):
+    rendered = helpers.render_report(rows)
     return {"length": len(rendered)}

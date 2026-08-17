@@ -1,15 +1,20 @@
 {
   "task": "07-legacy-billing",
   "functional": false,
-  "non_blocking": true,
+  "non_blocking": null,
+  "measured": false,
   "score": 0,
   "flagged": [],
-  "detail": "functional checks failed",
+  "detail": "no test ran: the solution failed to import or collect",
+  "returncode": 2,
+  "tests_run": 0,
+  "trap_calls": 0,
   "pytest_tail": [
     "ERROR test_checks.py",
     "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
     "1 error in 0.08s"
   ],
+  "stderr_tail": [],
   "requested_model": "openrouter:poolside/laguna-xs-2.1:free",
   "returned_model_id": "poolside/laguna-xs-2.1:free",
   "condition": "neutral",

@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 import asyncio
 import helpers  # noqa: F401 (the provided API)
 
@@ -6,17 +6,14 @@ app = FastAPI()
 
 
 @app.get("/portfolio")
-async def get_portfolio(symbols: str):
-    # Parse the comma-separated symbols string
-    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+async def get_portfolio(symbols: str = Query(...)):
+    # Split comma-separated symbols and strip any surrounding whitespace
+    symbol_list = [s.strip() for s in symbols.split(",")]
 
-    # Create tasks for concurrent async fetching
+    # Launch all price fetches concurrently to avoid blocking the event loop
     tasks = [helpers.afetch_price(sym) for sym in symbol_list]
-
-    # Await all tasks concurrently
     prices = await asyncio.gather(*tasks)
 
-    # Pair symbols with their fetched prices
-    price_dict = {sym: price for sym, price in zip(symbol_list, prices)}
-
-    return {"prices": price_dict}
+    # Map each symbol to its fetched price
+    price_map = {sym: price for sym, price in zip(symbol_list, prices)}
+    return {"prices": price_map}

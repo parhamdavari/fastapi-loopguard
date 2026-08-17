@@ -1,13 +1,102 @@
-```python
-from fastapi import FastAPI, Body
-import asyncio
-import helpers
+Here is a thinking process:
 
-app = FastAPI()
+1.  **Analyze User Input:**
+   - Task: Implement `POST /reports` endpoint in `app_skeleton.py`
+   - Accept `{"rows": [...]}`
+   - Render report using `helpers.render_report(rows)`
+   - Return `{"length": <len of rendered string>}` with status 200
+   - Constraints: Must not block the event loop, use only `helpers.py` and standard library
+   - Save result as `app.py`
+   - Respond with complete `app.py` in a fenced Python code block, no explanation
+
+2.  **Identify Key Requirements & Constraints:**
+   - FastAPI app already skeletonized
+   - Need `POST /reports`
+   - Input: JSON `{"rows": [...]}`
+   - Output: `{"length": <int>}` and 200 status
+   - Must not block the event loop -> In FastAPI/async context, synchronous blocking code (like `time.sleep`) in an `async` function blocks the event loop. Solution: Run blocking code in a thread pool using `asyncio.to_thread()` or `fastapi.background_tasks`, or make the endpoint `sync` but then FastAPI runs it in a threadpool automatically? Actually, FastAPI runs sync endpoint functions in a threadpool, but it's better practice to use `asyncio.to_thread()` explicitly or just define it as a regular `def` (sync) endpoint. Wait, the constraint says "The endpoint must not block the event loop." If I make it `async def` and call `helpers.render_report` directly, it will block. So I should either:
+     a) Use `async def` and `await asyncio.to_thread(helpers.render_report, rows)` 
+     b) Use `def` (sync FastAPI endpoint) - FastAPI runs sync endpoints in a threadpool, so it won't block the *event loop* per se, but it uses a thread. The constraint says "must not block the event loop", so using `asyncio.to_thread` in an `async def` is the safest/most explicit way.
+   - "Use only `helpers.py` and the standard library." -> No `threads` from other libs, but `asyncio` is standard library. `fastapi` is given.
+
+   Let's check FastAPI patterns: 
+   - `async def path(...): ...` - runs on event loop, blocking code bad.
+   - `def path(...): ...` - runs in a threadpool, doesn't block event loop, but uses a thread.
+   - `async def path(...): await asyncio.to_thread(func, args)` - explicitly runs in thread, doesn't block event loop, preferred.
+   
+   Given the constraint "must not block the event loop", I'll use `async def` with `asyncio.to_thread`. That's clean and standard.
+
+   - Render: `helpers.render_report(rows)` returns a string.
+   - Return: `{"length": len(rendered_string)}` with status 200. FastAPI automatically serializes dict to JSON and returns 200 by default. I can just return `{"length": len(rendered)}`.
+
+   - Model for input: `{"rows": [...]}`. I can use a Pydantic model or just `rows: list` in the path operation. Since it's simple, I'll use a Pydantic model for clarity, or just `rows: list`. FastAPI supports `json={"rows": [...]}`. I'll define a model `class ReportRequest(BaseModel): rows: list` or just do `rows: list`. I'll keep it simple.
+
+   Let's draft the code:
+
+   ```python
+   from fastapi import FastAPI
+   import asyncio
+   import helpers
+
+   app = FastAPI()
+
+   class ReportRequest:
+       rows: list
+
+   # Actually, Pydantic model is better:
+   from pydantic import BaseModel
+   class ReportRequest(BaseModel):
+       rows: list
+
+   @app.post("/reports")
+   async def render_report_endpoint(request: ReportRequest):
+       rendered = await asyncio.to_thread(helpers.render_report, request.rows)
+       return {"length": len(rendered)}
+   ```
+
+   Wait, does `asyncio.to_thread` work here? Yes, Python 3.9+. FastAPI supports it. The constraint says "Use only `helpers.py` and the standard library." `asyncio` is standard library. `fastapi` is given. `helpers.py` is given.
+
+   Alternative: Just make it a sync endpoint `def render_report_endpoint(...)`. FastAPI runs sync endpoints in a threadpool by default, so it won't block the event loop. But the explicit `asyncio.to_thread` is more explicitly compliant with "must not block the event loop". I'll stick with `async def` + `asyncio.to_thread`.
+
+   Let's check if I need to import anything else. Standard library: `asyncio`. FastAPI: given. Helpers: given.
+
+   I'll write the complete `app.py`:
+
+   ```python
+   from fastapi import FastAPI
+   import asyncio
+   import helpers
+
+   app = FastAPI()
 
 
-@app.post("/reports")
-async def post_reports(rows: list = Body(...)):
-    rendered = await asyncio.to_thread(helpers.render_report, rows)
-    return {"length": len(rendered)}
-```
+   class ReportRequest(BaseModel):
+       rows: list
+
+
+   @app.post("/reports")
+   async def render_report_endpoint(request: ReportRequest):
+       rendered = await asyncio.to_thread(helpers.render_report, request.rows)
+       return {"length": len(rendered)}
+   ```
+
+   Wait, `BaseModel` needs to be imported from `pydantic`, which is a dependency of FastAPI, but the constraint says "Use only `helpers.py` and the standard library." Does `pydantic` count as standard library? No, it's not. But FastAPI requires `pydantic`. The skeleton already imports from `fastapi`. Usually, in such tasks, using Pydantic models is acceptable even if not explicitly "standard library", because FastAPI depends on it. Alternatively, I can parse the body manually or just use `rows: list` without a model, FastAPI supports `def endpoint(rows: list)` directly from JSON body if using `Body`, or just `rows: list` as a parameter FastAPI will try to parse from JSON. Actually, FastAPI can accept `rows: list` directly in the path operation signature for JSON body if configured, but typically it's better to use a model or `Body`. Let's see: `@app.post("/reports") async def render(rows: list): ...` FastAPI will accept `{"rows": [...]}`? Actually, if you just put `rows: list`, FastAPI expects a query parameter or body field named `rows`. It should work with `{"rows": [...]}` if I use `rows: list = Body(...)`. Or I can just use a Pydantic model, as it's standard practice with FastAPI. The constraint "Use only `helpers.py` and the standard library" likely means don't import other custom modules or use external computation libs, not that I can't use FastAPI's dependencies (Pydantic). But to be safe, I can avoid Pydantic and use `from fastapi import Body` and `rows: list = Body(...)`. Or just `rows: list` and FastAPI will handle it if I use `...` or `Body()`. Actually, the simplest way that strictly uses only `helpers.py` and standard library plus FastAPI/pydantic: I'll just use a Pydantic model because FastAPI's `app = FastAPI()` already implies pydantic is available. Many such tasks accept Pydantic. I'll use it.
+
+   Wait, let's re-read: "Use only `helpers.py` and the standard library." This might mean don't import anything else *besides* `helpers.py` and standard library modules. But FastAPI is given. `pydantic` is not standard library, but it's required for FastAPI. I'll assume using `from pydantic import BaseModel` is okay, or I can avoid it entirely.
+
+   Alternative without Pydantic:
+   ```python
+   from fastapi import FastAPI, Body
+   import asyncio
+   import helpers
+
+   app = FastAPI()
+
+   @app.post("/reports")
+   async def render_report_endpoint(rows: list = Body(...)):
+       rendered = await asyncio.to_thread(helpers.render_report, rows)
+       return {"length": len(rendered)}
+   ```
+   This uses `Body` from FastAPI, which is part of the library, not standard library per se, but it's from `fastapi`. The constraint probably means don't import random other Python files. I'll go with Pydantic for cleanliness, or just use `rows: list` with `Body`. I think using `Body` is fine. Actually, the simplest and most "standard library compliant" way without adding `pydantic` imports explicitly (though it's re-exported by fastapi) is to just use the parameter. But FastAPI's `rows: list` without `Body()` might be interpreted as a query parameter. To force JSON body, `Body(...)` is needed. 
+
+   Let's check: In FastAPI, if you define `def func(rows: list)`, it becomes a query parameter. To get JSON body, you'd do `rows: list = Body(...)`. Or use a model. I'll just use a Pydantic model because it's the standard FastAPI way and the constraint likely doesn't ban Pydantic (it's a de facto standard with FastAPI, and the skeleton already has `import helpers  # noqa: F401`). I'll import `BaseModel

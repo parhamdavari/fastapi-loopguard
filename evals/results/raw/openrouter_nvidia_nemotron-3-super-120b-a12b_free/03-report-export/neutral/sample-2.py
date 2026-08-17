@@ -1,11 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Body
 
-import helpers  # noqa: F401  (the provided API)
+import helpers
 
 app = FastAPI()
 
+
 @app.post("/reports")
-def create_report(data: dict):
-    rows = data["rows"]
+async def create_report(payload: dict = Body(...)):
+    rows = payload.get("rows", [])
     rendered = helpers.render_report(rows)
     return {"length": len(rendered)}
