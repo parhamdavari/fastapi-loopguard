@@ -90,6 +90,36 @@ src/fastapi_loopguard/
 - Each invariant has dedicated coverage: `test_enforcement_mode.py` for modes and dev-mode escalation, `test_monitor.py` for calibration, idempotency, and task cancellation, `test_cumulative_blocking.py` for the window, `test_context.py` for registry lifecycle and `__slots__`, `test_pytest_plugin.py` for the marker.
 - Timing tests are inherently flaky under load. Prefer driving `SentinelMonitor` directly with an `on_blocking` callback (as `test_cumulative_blocking.py` does) over asserting on wall-clock durations.
 
+## The evals harness (`evals/`)
+
+Not shipped with the package, but it decides what this project publishes about
+other people's models, so it carries its own invariants:
+
+1. **A sample that never ran is never evidence.** `runner.score_task` returns
+   three states, not two: measured-and-clean, measured-and-blocked, and
+   `measured: false` with `non_blocking: None`. Unmeasured samples are dropped
+   from blocked-rate denominators. Folding them into "did not block" is a
+   one-directional bias on the exact number the benchmark advertises, and it
+   is the bug that reached a published table once already.
+2. **Measured means the trap actually executed.** The runner appends a counter
+   to its *copy* of `helpers.py` and requires a non-zero count. The tally is a
+   file, not a module global, because a `ProcessPoolExecutor` answer is correct
+   and runs the helper in a child process.
+3. **The prompt the model sees is the committed fixture, byte for byte.** All
+   instrumentation goes into the temp-dir copy. `neutral/task.md` and
+   `hinted/task.md` must differ by exactly one added line — the hint sentence.
+   Anything else makes the measured gap unattributable. There is a one-line
+   symmetry check in `evals/README.md`; run it after touching any task.
+4. **Changing a prompt invalidates that cell's samples.** `helpers.py`,
+   `app_skeleton.py` and either `task.md` are all part of the prompt. Archive
+   and regenerate the affected cells; do not re-score across a prompt change.
+5. **An empty completion is an API failure, not a model failure.** Adapters
+   retry it and then raise. Never write it out as an empty `app.py`.
+6. **Scoring is free; generation is not.** After any judge change run
+   `python evals/matrix.py --rescore`, which re-judges every committed
+   solution and re-derives `app.py` from the archived raw response. Only a
+   prompt change needs the paid path.
+
 ## Known Gaps (accurate as of 2026-08-11)
 
 Recorded so they are not rediscovered. None are fixed yet; fixing any of them is its own task. The fuller list, including design tensions deferred from the 0.5 correctness pass, is `FINDINGS.md`.

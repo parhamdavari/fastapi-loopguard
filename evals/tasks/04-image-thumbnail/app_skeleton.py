@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 
 import helpers  # noqa: F401  (the provided API)
 

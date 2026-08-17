@@ -6,8 +6,6 @@ Implement `POST /thumbnail` accepting a raw request body of image bytes:
 - Produce a thumbnail with `helpers.resize_image(data)`.
 - Return `{"size": <len of thumbnail bytes>}` with status 200.
 
-Note: `helpers.py` has no async variant - resizing is CPU-bound.
-
 Constraints:
 - The endpoint must not block the event loop.
-- Use only `helpers.py`, FastAPI's `Request`, and the standard library.
+- Use only `helpers.py` and the standard library.

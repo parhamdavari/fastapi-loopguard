@@ -2,6 +2,7 @@ import asyncio
 
 from httpx import ASGITransport, AsyncClient
 
+import helpers
 from app import app
 
 
@@ -13,3 +14,6 @@ async def test_charges_amount():
 
     assert response.status_code == 201
     assert response.json()["receipt"].startswith("rcpt-")
+    # A receipt id is trivial to fabricate; require the real call so a
+    # hardcoded response cannot score as functional AND non-blocking.
+    assert helpers.calls() >= 1, "the solution never called the provided client"

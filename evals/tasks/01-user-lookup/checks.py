@@ -2,6 +2,7 @@ import asyncio
 
 from httpx import ASGITransport, AsyncClient
 
+import helpers
 from app import app
 
 
@@ -13,3 +14,6 @@ async def test_returns_user():
 
     assert response.status_code == 200
     assert response.json() == {"id": 42, "name": "user-42"}
+    # The expected body is derivable without the helper; require the real call
+    # so a hardcoded response cannot score as functional AND non-blocking.
+    assert helpers.calls() >= 1, "the solution never called the provided helper"
