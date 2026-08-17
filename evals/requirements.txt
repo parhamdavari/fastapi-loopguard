@@ -8,5 +8,5 @@ openai>=1.50
 # judge fails the sample at import time and the harness's missing dependency is
 # scored as the model's mistake: `Form(...)` needs python-multipart, and async
 # file I/O is one of the fix hints the pytest plugin itself suggests.
-python-multipart>=0.0.9
+python-multipart>=0.0.32
 aiofiles>=23.0
