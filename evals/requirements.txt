@@ -9,4 +9,4 @@ openai>=1.50
 # scored as the model's mistake: `Form(...)` needs python-multipart, and async
 # file I/O is one of the fix hints the pytest plugin itself suggests.
 python-multipart>=0.0.9
-aiofiles>=23.0
+aiofiles>=25.1.0
