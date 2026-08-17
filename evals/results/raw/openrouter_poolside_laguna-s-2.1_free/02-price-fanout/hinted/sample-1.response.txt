@@ -1,32 +1,34 @@
-```python
-# app.py
-from fastapi import FastAPI
-from typing import List
-from urllib.parse import parse_qs
+To solve this problem, we need to implement an endpoint `GET /portfolio?symbols=AAA,BBB,CCC` that fetches stock prices concurrently using a provided async helper function and returns the results in a JSON response. The solution must ensure non-blocking behavior and meet a performance constraint.
 
-import asyncio
+### Approach
+1. **Concurrent Requests**: Use the async helper `afetch_price` to fetch prices concurrently. This is crucial because the endpoint must not block the event loop and must handle multiple symbols efficiently.
+2. **Asynchronous Processing**: Utilize `asyncio.gather` to launch all the price-fetching tasks simultaneously. This allows all requests to be made in parallel rather than sequentially, significantly reducing the total response time.
+3. **Parsing Symbols**: Extract the `symbols` query parameter, split it into individual symbols, and ensure no empty or invalid entries are processed.
+4. **Response Formatting**: Construct the response as a dictionary with the format `{"prices": {symbol: price, ...}}` and return it with a 200 status code.
+
+### Solution Code
+```python
+from fastapi import FastAPI, HTTPException
+from typing import Dict
+
 import helpers
 
 app = FastAPI()
 
 
 @app.get("/portfolio")
-async def get_portfolio(symbols: str = ""):
-    symbol_list: List[str] = [s.strip() for s in symbols.split(",") if s.strip()]
-    
-    async def fetch(symbol: str):
-        # Use async fetch to avoid blocking
-        return {symbol: await helpers.afetch_price(symbol)}
-    
-    tasks = [fetch(symbol) for symbol in symbol_list]
-    
-    # Gather results concurrently
+async def get_portfolio(symbols: str):
+    symbol_list = [s for s in symbols.split(',') if s]
+    tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
     results = await asyncio.gather(*tasks)
-    
-    # Merge individual results into a single dict
-    prices = {}
-    for result in results:
-        prices.update(result)
-    
-    return {"prices": prices}
+    price_dict = {symbol: price for symbol, price in zip(symbol_list, results)}
+    return {"prices": price_dict}
 ```
+
+### Explanation
+1. **Concurrency with `asyncio.gather`**: By creating tasks for each symbol's price fetch and using `asyncio.gather`, we ensure all prices are fetched concurrently. This means the total time taken is roughly the same as fetching a single price (~120ms), which is well under the required 0.3 seconds for three symbols.
+2. **Non-blocking**: Using the async `afetch_price` function ensures the event loop is not blocked, allowing other requests to be handled simultaneously.
+3. **Efficient Parsing**: The symbols are split and filtered to handle any invalid entries, ensuring only valid symbols are processed.
+4. **Response Construction**: The results from concurrent tasks are combined into a dictionary and returned in the required JSON format.
+
+This approach efficiently meets all constraints, providing a fast, non-blocking solution that adheres to the specified requirements.

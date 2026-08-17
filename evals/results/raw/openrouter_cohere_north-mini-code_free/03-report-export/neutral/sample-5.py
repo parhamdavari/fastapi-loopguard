@@ -1,11 +1,11 @@
-from fastapi import FastAPI, Body
+from fastapi import FastAPI
 
-import helpers  # noqa: F401
+import helpers
 
 app = FastAPI()
 
-
 @app.post("/reports")
-def create_report(rows: list = Body(...)):
+def reports(payload: dict):
+    rows = payload["rows"]
     rendered = helpers.render_report(rows)
     return {"length": len(rendered)}

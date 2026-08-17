@@ -1,17 +1,14 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List, Any
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 import helpers
 
 app = FastAPI()
 
 
-class ReportRequest(BaseModel):
-    rows: List[Any]
-
-
 @app.post("/reports")
-def create_report(payload: ReportRequest):
-    rendered = helpers.render_report(payload.rows)
-    return {"length": len(rendered)}
+async def reports(request: Request):
+    body = await request.json()
+    rows = body.get("rows", [])
+    rendered = helpers.render_report(rows)
+    return JSONResponse(content={"length": len(rendered)}, status_code=200)

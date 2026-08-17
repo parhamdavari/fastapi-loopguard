@@ -11,26 +11,46 @@ against the 120–150 ms traps).
 
 Every task has the same skeleton, helpers, and checks under two prompts:
 
-- `neutral/task.md` — the feature request only. No mention of blocking, the
-  event loop, async correctness, threads, or concurrency mechanisms.
-- `hinted/task.md` — the same request plus the explicit constraint "the
-  endpoint must not block the event loop".
+- `neutral/task.md` — the feature request only.
+- `hinted/task.md` — byte-identical, plus one line: "The endpoint must not
+  block the event loop."
+
+The two files differ by **exactly that one added line** on all eight tasks, and
+nothing else — not the title, not the spec, not a second hint naming the trap.
+`make check-symmetry` below is the guard; if a condition pair ever differs by
+more, the gap between them stops being attributable to the hint.
 
 The neutral condition is the realistic one: a developer asks for an endpoint,
 not for a non-blocking endpoint. The gap between the two conditions is the
 headline metric.
 
+**What the neutral prompt does still say.** The prompt is the task text plus
+`app_skeleton.py` plus the full source of `helpers.py`, and those helper
+docstrings describe the trap: "Synchronous: ~150ms of blocking I/O",
+"synchronous only". On tasks 01, 02 and 05 the model is also handed a working
+async twin. So the neutral condition is *easier* than a real codebase, where
+nobody labels the blocking call. Read the neutral blocking rates as a floor.
+
 ## Trap shapes
 
-The eight tasks cover five shapes:
+The eight tasks cover five shapes. A plain `def` route is correct on **every**
+task — FastAPI runs sync routes in a threadpool, which is exactly the right
+answer — so it is never the distinguishing strategy:
 
 | Tasks | Shape | Correct strategies |
 |---|---|---|
 | 01, 02, 05 | slow sync helper with an async twin (02 adds a latency budget that forces concurrent fetching) | async variant, `asyncio.to_thread`, or a plain `def` route |
-| 03, 04 | CPU-bound helper, **no async variant** | `asyncio.to_thread` / executor |
-| 06 | blocking file I/O helper, no async variant | `asyncio.to_thread` / executor |
-| 07 | sync-only client object behind a FastAPI dependency | offload the method call |
-| 08 | blocking call two frames deep inside an innocent-looking helper | offload the top-level call |
+| 03, 04 | slow sync helper, **no async variant** | `asyncio.to_thread` / executor, or a plain `def` route |
+| 06 | blocking file I/O helper, no async variant | `asyncio.to_thread` / executor, or a plain `def` route |
+| 07 | sync-only client object behind a FastAPI dependency | offload the method call, or a plain `def` route |
+| 08 | blocking call two frames deep inside an innocent-looking helper | offload the top-level call, or a plain `def` route |
+
+Every trap simulates its work with `time.sleep`, which **releases the GIL**.
+That is a real limit on what these tasks can show: for genuinely CPU-bound
+work a plain `def` route would starve the loop once enough requests arrive in
+parallel, and this benchmark would still score it clean. What the tasks
+measure is recognition of a documented slow synchronous call, not the
+threadpool's behaviour under real CPU load.
 
 ## Layout
 
@@ -61,24 +81,51 @@ in the context given to a model under test.
 
 ```bash
 pip install -e ".[dev]"              # from the repository root
+pip install -r evals/requirements.txt
 
 # Score one solution file against one task (single-file contract, unchanged):
 python evals/runner.py --task evals/tasks/01-user-lookup --solution path/to/app.py
 
 # Score a full matrix against API models (keys come from environment
-# variables only: ANTHROPIC_API_KEY, OPENAI_API_KEY):
-pip install -r evals/requirements.txt
+# variables only: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY):
 python evals/matrix.py --models anthropic:claude-sonnet-5,openai:gpt-5 --samples 5
+
+# Re-judge every persisted solution without regenerating anything. Free: no
+# API calls. Use after any judge change so old verdicts do not stay frozen.
+python evals/matrix.py --rescore
 
 # No API keys? The local adapter is the supported fallback. Generate
 # solutions elsewhere, drop them in <dir>/<task>/<condition>/sample-<n>.py:
 python evals/matrix.py --models local:path/to/solutions --samples 5
 ```
 
+`evals/requirements.txt` is not optional for scoring. It carries
+`python-multipart` and `aiofiles`, which some *solutions* import: without them
+the judge fails the sample at import time and the harness's missing dependency
+is published as the model's mistake.
+
+Requests to one provider are paced (`--request-interval`, default 6 s for
+OpenRouter, whose WAF rejects burst traffic) and retried with exponential
+backoff. An empty completion is retried and then raised, never written out as
+an empty `app.py`: a gateway returning nothing is an API failure, not a model
+failure, and scoring it as one is how a provider hiccup becomes a published
+pass rate.
+
 Every matrix run starts with a **judge self-check**: all reference solutions
 are re-scored, the judge's error rate on ground truth is printed and recorded
 in `results.json`, and any miscall aborts the run. Runs are resumable — a
-cell whose verdict already exists under `results/raw/` is skipped.
+cell whose verdict already exists under `results/raw/` is skipped. Note that
+`results.json` keeps only the *last* self-check of a batch, so "0/16" is a
+statement about the runs on record, not about every invocation.
+
+Condition symmetry is checkable in one line — it must print nothing:
+
+```bash
+for t in evals/tasks/*/; do
+  diff <(cat "$t/neutral/task.md") <(cat "$t/hinted/task.md") \
+    | grep -v '^[0-9]' | grep -v 'must not block the event loop' | grep '^[<>]'
+done
+```
 
 A model whose SDK or key is missing is skipped with a message; the run
 continues. Keys are never written to files or printed.
@@ -92,11 +139,31 @@ Python version, and the threshold used.
 Per sample, `runner.py` copies the solution, helpers, and checks into a temp
 directory and runs pytest with `loopguard_all_async = true`:
 
-| exit | blocked verdicts | functional | non_blocking | score |
-|------|------------------|------------|--------------|-------|
-| 0    | none             | true       | true         | 1     |
-| ≠0   | ≥1               | unknown    | false        | 0     |
-| ≠0   | none             | false      | true         | 0     |
+| outcome | measured | non_blocking | score |
+|---|---|---|---|
+| all checks passed | true | true | 1 |
+| ≥1 blocked verdict | true | **false** | 0 |
+| ran, no blocking, functional failure | true | true | 0 |
+| solution did not import, or was empty | **false** | **null** | 0 |
+| trap helper never invoked (rejected before the body, or never called) | **false** | **null** | 0 |
+| pytest timed out | **false** | **null** | 0 |
+
+**`measured` is the important column.** A sample that never ran its endpoint
+was never tested for blocking, so it is `null`, not `true`, and it is dropped
+from every blocked-rate denominator. Recording it as "did not block" is a
+one-directional bias: it can only ever make a model look better at the exact
+number this benchmark publishes.
+
+To tell "ran and was clean" from "never ran", the runner appends a counter to
+its *copy* of `helpers.py` — never to the task fixture, so the prompt stays
+byte-identical — and requires the trap to have actually executed. The tally is
+a file rather than a module global, because `run_in_executor` with a
+`ProcessPoolExecutor` is a correct answer here and runs the helper in a child
+process.
+
+Each `checks.py` also asserts the trap ran, so a solution that hardcodes the
+expected response cannot score as functional *and* non-blocking. Six of the
+eight tasks have a response body that is derivable from the request alone.
 
 The matrix reports pass rates (score = 1) per (task, condition) and in
 aggregate, plus the blocked rate separately, so a functional failure is not
@@ -104,194 +171,274 @@ mistaken for a blocking failure.
 
 ## Results
 
-Two runs, both through the OpenRouter gateway: the original run of
-2026-08-12 and a free-model expansion of 2026-08-13. The five expansion
-models were the top free coding models on OpenRouter that day, picked by
-programming-category rank and weekly token volume. The ids below are the
-exact model identifiers the provider returned. Every number traces to a
-raw artifact under `evals/results/raw/`.
+Seven models, all served through the OpenRouter gateway. The ids below are the
+exact identifiers the provider returned, and every number traces to a raw
+artifact under `evals/results/raw/`.
 
-The benchmark's question is whether the one-sentence hint removes
-event-loop blocking. A sample can also fail its functional checks for
-unrelated reasons, so the headline below counts **blocking verdicts only**;
-pass rates, which mix in functional failures, follow as context.
+The benchmark's question is whether one sentence of instruction removes
+event-loop blocking. A sample can also fail its functional checks for unrelated
+reasons, so the headline counts **blocking verdicts only**; pass rates, which
+mix in functional failures, follow as context.
 
-### Headline: blocking verdicts per condition (blocked/N)
+Denominators are **measured** samples — those whose endpoint actually ran. 105
+of the 560 generated samples never reached the blocking call (the request was
+rejected before the endpoint body, the solution failed to import, or the
+provider returned nothing), so they say nothing about blocking either way and
+are excluded. The `Unmeasured` column reports how many that was.
 
-| Model | Run date | Neutral | Hinted | Hint effect |
-|---|---|---|---|---|
-| `nvidia/nemotron-3.5-lightning:free` | 2026-08-12 | 5/40 (13%) | 0/40 (0%) | -13 pp |
-| `openai/gpt-4.1` | 2026-08-12 | 21/40 (53%) | 0/40 (0%) | -53 pp |
-| `poolside/laguna-s-2.1:free` | 2026-08-13 | 18/40 (45%) | 0/40 (0%) | -45 pp |
-| `poolside/laguna-xs-2.1:free` | 2026-08-13 | 7/40 (18%) | 0/40 (0%) | -18 pp |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | 2026-08-13 | 6/40 (15%) | 0/40 (0%) | -15 pp |
-| `nvidia/nemotron-3-super-120b-a12b:free` | 2026-08-13 | 5/40 (13%) | 0/40 (0%) | -13 pp |
-| `cohere/north-mini-code:free` | 2026-08-13 | 13/40 (33%) | 0/40 (0%) | -33 pp |
+### Headline: blocking verdicts per condition (blocked/measured)
 
-Across all seven models, not one of the 280 hinted samples ever blocked the
-loop, while every model blocked in the neutral condition. N=5 samples per
-(task, condition, model), 40 per cell above; temperature 1.0. Judge:
-fastapi-loopguard 0.6.1 on Python 3.14.3, threshold 50 ms. Judge
-self-check error rate on ground truth: 0/16 on every run.
+| Model | Neutral | Hinted | Unmeasured (neutral/hinted) |
+|---|---|---|---|
+| `openai/gpt-4.1` | 21/37 (57%) | 0/40 (0%) | 3/0 |
+| `poolside/laguna-s-2.1:free` | 18/38 (47%) | 0/32 (0%) | 2/8 |
+| `cohere/north-mini-code:free` | 7/32 (22%) | 0/31 (0%) | 8/9 |
+| `poolside/laguna-xs-2.1:free` | 5/30 (17%) | 0/30 (0%) | 10/10 |
+| `nvidia/nemotron-3-super-120b-a12b:free` | 5/33 (15%) | 0/33 (0%) | 7/7 |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | 3/38 (8%) | 0/33 (0%) | 2/7 |
+| `nvidia/nemotron-3.5-lightning:free` | 1/25 (4%) | 0/23 (0%) | 15/17 |
 
-### Where blocking happens (neutral condition, blocked/N)
+**Pooled: 60 of 233 measured neutral samples blocked the event loop. Zero of
+222 hinted samples did.** Every model blocked at least once by default; no
+model blocked once told not to.
 
-| Task | lightning | gpt-4.1 | laguna-s | laguna-xs | ultra | super | north-mini |
+N=5 per (task, condition, model); temperature 1.0. Judge: fastapi-loopguard
+0.6.1 on Python 3.14.3, threshold 50 ms. Judge self-check on ground truth:
+0/16 on every recorded run. All 560 records carry the requested model id back
+unchanged — no gateway substitution.
+
+### Where blocking happens (neutral, blocked/measured)
+
+| Task | gpt-4.1 | laguna-s | north-mini | laguna-xs | super | ultra | lightning |
 |---|---|---|---|---|---|---|---|
-| 01-user-lookup | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 |
-| 02-price-fanout | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 |
-| 03-report-export | 0/5 | 5/5 | 4/5 | 0/5 | 1/5 | 0/5 | 2/5 |
-| 04-image-thumbnail | 5/5 | 5/5 | 5/5 | 5/5 | 4/5 | 5/5 | 5/5 |
-| 05-audit-log | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 |
-| 06-document-save | 0/5 | 5/5 | 3/5 | 0/5 | 1/5 | 0/5 | 3/5 |
-| 07-legacy-billing | 0/5 | 1/5 | 2/5 | 0/5 | 0/5 | 0/5 | 3/5 |
-| 08-order-pipeline | 0/5 | 5/5 | 4/5 | 2/5 | 0/5 | 0/5 | 0/5 |
+| 01-user-lookup | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/4 |
+| 02-price-fanout | 0/2 | 0/3 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 |
+| 03-report-export | 5/5 | 4/5 | 0/3 | 0/5 | 1/3 | 0/5 | 0/2 |
+| 04-image-thumbnail | 5/5 | 5/5 | 1/1 | 3/3 | 4/4 | 2/5 | 1/4 |
+| 05-audit-log | 0/5 | 0/5 | 0/4 | 0/1 | 0/5 | 0/4 | 0/0 |
+| 06-document-save | 5/5 | 3/5 | 3/5 | 0/4 | 0/4 | 1/5 | 0/5 |
+| 07-legacy-billing | 1/5 | 2/5 | 3/5 | 0/2 | 0/2 | 0/5 | 0/0 |
+| 08-order-pipeline | 5/5 | 4/5 | 0/4 | 2/5 | 0/5 | 0/4 | 0/5 |
 
-The hinted-condition equivalent of this table is all zeros and is omitted.
-Every blocking verdict of every model sits in the five tasks with no async
-variant (03, 04, 06, 07, 08); tasks with an async twin (01, 02, 05) never
-blocked for any model. Task 04 (CPU-bound thumbnail) defeats every model's
-defaults.
+The hinted equivalent of this table is all zeros and is omitted.
+
+Two cells are `0/0`: Lightning's 05-audit-log and 07-legacy-billing neutral
+samples all failed before reaching the helper, so nothing was measured there.
+`0/0` means "no evidence", not "clean" — read those two as blank, and treat
+any cell with a small denominator as coarse.
+
+Every blocking verdict, for every model, sits in the five tasks with no async
+variant (03, 04, 06, 07, 08). Tasks 01, 02 and 05 hand the model a working
+async twin and have never produced a blocking verdict in either condition —
+they measure whether a model picks up the async variant, not whether it
+offloads. 04-image-thumbnail is the hardest: every model blocks on it.
+
+### What the failures actually look like
+
+This is the sharpest result in the benchmark, and it is not a rate.
+
+**All 60 neutral blocking verdicts have the identical shape:** an `async def`
+route that calls the synchronous helper directly, with no offload. Not one is
+anything else.
+
+Meanwhile **81 passing neutral samples used a plain `def` route** — which
+FastAPI runs in a threadpool, so it never blocks — against **1** in the hinted
+condition.
+
+So the default-condition failure is not "the model does not know about
+`asyncio.to_thread`". Models split between two behaviours: write a plain `def`
+route and be safe by construction, or reach for `async def` and then call
+blocking code inside it. The hint does not teach offloading so much as it makes
+the model notice which of the two it just chose. Under instruction, models
+converge on `async def` plus an explicit offload, and the blocking disappears.
 
 ### Context: overall pass rates (blocking AND functional failures)
 
-These rates conflate the two failure kinds; the gap column is only
-interpretable next to the per-task tables below and the blocking table
-above.
+These conflate the two failure kinds, and every denominator here is all 40
+generated samples, measured or not. The gap column is only interpretable next
+to the tables above.
 
-| Model | Run date | Neutral pass rate | Hinted pass rate | Gap (hinted - neutral) |
-|---|---|---|---|---|
-| `nvidia/nemotron-3.5-lightning:free` | 2026-08-12 | 24/40 (60%) | 24/40 (60%) | +0 pp |
-| `openai/gpt-4.1` | 2026-08-12 | 16/40 (40%) | 39/40 (98%) | +57 pp |
-| `poolside/laguna-s-2.1:free` | 2026-08-13 | 12/40 (30%) | 28/40 (70%) | +40 pp |
-| `poolside/laguna-xs-2.1:free` | 2026-08-13 | 21/40 (52%) | 26/40 (65%) | +12 pp |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | 2026-08-13 | 30/40 (75%) | 29/40 (72%) | -3 pp |
-| `nvidia/nemotron-3-super-120b-a12b:free` | 2026-08-13 | 29/40 (72%) | 33/40 (82%) | +10 pp |
-| `cohere/north-mini-code:free` | 2026-08-13 | 22/40 (55%) | 31/40 (78%) | +22 pp |
+| Model | Neutral pass rate | Hinted pass rate | Gap (hinted - neutral) |
+|---|---|---|---|
+| `openai/gpt-4.1` | 16/40 (40%) | 40/40 (100%) | +60 pp |
+| `poolside/laguna-s-2.1:free` | 12/40 (30%) | 24/40 (60%) | +30 pp |
+| `nvidia/nemotron-3-super-120b-a12b:free` | 26/40 (65%) | 33/40 (82%) | +17 pp |
+| `cohere/north-mini-code:free` | 23/40 (58%) | 27/40 (68%) | +10 pp |
+| `poolside/laguna-xs-2.1:free` | 22/40 (55%) | 22/40 (55%) | +0 pp |
+| `nvidia/nemotron-3.5-lightning:free` | 24/40 (60%) | 23/40 (58%) | -3 pp |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | 35/40 (88%) | 33/40 (82%) | -5 pp |
 
-### Per-task breakdown (passed/N)
+A small or negative gap here does **not** mean good defaults. It usually means
+functional failures dominate in both conditions, leaving the hint little to
+fix. Nemotron 3 Ultra has the strongest functional competence in the set (88%
+neutral) and still blocked on 3 measured neutral samples that the hint
+eliminated. Lightning's -3 pp gap sits on top of the smallest measured base in
+the set: only 25 of its 40 neutral samples ran at all.
 
-Neutral condition:
+### Per-task breakdown (passed/N of all 40)
 
-| Task | lightning | gpt-4.1 | laguna-s | laguna-xs | ultra | super | north-mini |
+Neutral:
+
+| Task | gpt-4.1 | laguna-s | north-mini | laguna-xs | super | ultra | lightning |
 |---|---|---|---|---|---|---|---|
-| 01-user-lookup | 4/5 | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 |
-| 02-price-fanout | 5/5 | 2/5 | 3/5 | 5/5 | 5/5 | 5/5 | 5/5 |
-| 03-report-export | 5/5 | 0/5 | 1/5 | 4/5 | 3/5 | 5/5 | 2/5 |
-| 04-image-thumbnail | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 |
-| 05-audit-log | 0/5 | 5/5 | 1/5 | 1/5 | 4/5 | 4/5 | 3/5 |
-| 06-document-save | 5/5 | 0/5 | 0/5 | 1/5 | 4/5 | 4/5 | 2/5 |
-| 07-legacy-billing | 0/5 | 4/5 | 1/5 | 2/5 | 5/5 | 2/5 | 1/5 |
-| 08-order-pipeline | 5/5 | 0/5 | 1/5 | 3/5 | 4/5 | 4/5 | 4/5 |
+| 01-user-lookup | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 | 4/5 |
+| 02-price-fanout | 2/5 | 3/5 | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 |
+| 03-report-export | 0/5 | 1/5 | 3/5 | 5/5 | 2/5 | 5/5 | 2/5 |
+| 04-image-thumbnail | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | 3/5 | 3/5 |
+| 05-audit-log | 5/5 | 1/5 | 3/5 | 1/5 | 4/5 | 4/5 | 0/5 |
+| 06-document-save | 0/5 | 0/5 | 2/5 | 1/5 | 4/5 | 4/5 | 5/5 |
+| 07-legacy-billing | 4/5 | 1/5 | 1/5 | 2/5 | 2/5 | 5/5 | 0/5 |
+| 08-order-pipeline | 0/5 | 1/5 | 4/5 | 3/5 | 4/5 | 4/5 | 5/5 |
 
-Hinted condition:
+Hinted:
 
-| Task | lightning | gpt-4.1 | laguna-s | laguna-xs | ultra | super | north-mini |
+| Task | gpt-4.1 | laguna-s | north-mini | laguna-xs | super | ultra | lightning |
 |---|---|---|---|---|---|---|---|
-| 01-user-lookup | 4/5 | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 |
-| 02-price-fanout | 4/5 | 4/5 | 4/5 | 5/5 | 5/5 | 4/5 | 5/5 |
-| 03-report-export | 3/5 | 5/5 | 4/5 | 3/5 | 3/5 | 5/5 | 4/5 |
-| 04-image-thumbnail | 4/5 | 5/5 | 5/5 | 5/5 | 4/5 | 5/5 | 5/5 |
-| 05-audit-log | 1/5 | 5/5 | 1/5 | 1/5 | 2/5 | 4/5 | 4/5 |
-| 06-document-save | 3/5 | 5/5 | 3/5 | 2/5 | 5/5 | 4/5 | 1/5 |
-| 07-legacy-billing | 0/5 | 5/5 | 3/5 | 2/5 | 2/5 | 1/5 | 3/5 |
-| 08-order-pipeline | 5/5 | 5/5 | 3/5 | 3/5 | 3/5 | 5/5 | 4/5 |
+| 01-user-lookup | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 | 5/5 | 4/5 |
+| 02-price-fanout | 5/5 | 2/5 | 5/5 | 4/5 | 5/5 | 5/5 | 5/5 |
+| 03-report-export | 5/5 | 4/5 | 3/5 | 3/5 | 4/5 | 5/5 | 0/5 |
+| 04-image-thumbnail | 5/5 | 3/5 | 2/5 | 2/5 | 5/5 | 5/5 | 5/5 |
+| 05-audit-log | 5/5 | 1/5 | 4/5 | 1/5 | 4/5 | 3/5 | 1/5 |
+| 06-document-save | 5/5 | 3/5 | 1/5 | 2/5 | 4/5 | 5/5 | 3/5 |
+| 07-legacy-billing | 5/5 | 3/5 | 3/5 | 2/5 | 1/5 | 2/5 | 0/5 |
+| 08-order-pipeline | 5/5 | 3/5 | 4/5 | 3/5 | 5/5 | 3/5 | 5/5 |
 
-Column keys: `lightning` = `nvidia/nemotron-3.5-lightning:free`, `gpt-4.1`
-= `openai/gpt-4.1`, `laguna-s` = `poolside/laguna-s-2.1:free`, `laguna-xs`
-= `poolside/laguna-xs-2.1:free`, `ultra` =
-`nvidia/nemotron-3-ultra-550b-a55b:free`, `super` =
-`nvidia/nemotron-3-super-120b-a12b:free`, `north-mini` =
-`cohere/north-mini-code:free`.
+Column keys: `gpt-4.1` = `openai/gpt-4.1`, `laguna-s` =
+`poolside/laguna-s-2.1:free`, `north-mini` = `cohere/north-mini-code:free`,
+`laguna-xs` = `poolside/laguna-xs-2.1:free`, `super` =
+`nvidia/nemotron-3-super-120b-a12b:free`, `ultra` =
+`nvidia/nemotron-3-ultra-550b-a55b:free`, `lightning` =
+`nvidia/nemotron-3.5-lightning:free`.
 
-### What the pass-rate gap does and does not show
+### How strong is this, statistically?
 
-The pass-rate gap measures one thing: how far a model's *default* behavior sits from
-its *instructed* behavior on this specific skill. For GPT-4.1 the gap is
-large and attributable to blocking: 21 of its 24 neutral failures were
-blocking verdicts, concentrated entirely in the tasks with no async variant
-(03, 04, 06, 08: 0/20 neutral, 20/20 hinted). The model reaches for an async
-twin whenever one exists but does not offload sync work unprompted. The gap
-does not measure general coding competence, and it is only interpretable
-when functional pass rates are high: Nemotron's +0 pp gap does not mean good
-defaults — it failed 16/40 samples in *both* conditions (11 functional and
-5 blocking in neutral; all 16 functional in hinted), so the hint had little
-left to fix. A small gap is not evidence
-that a model is safe to leave unprompted; read it next to the per-task table.
+Not as strong per model as the percentages suggest, and stronger in aggregate.
 
-Laguna S 2.1 — a dedicated coding model — replicates the GPT-4.1 shape more
-strongly: all 18 of its neutral blocking verdicts sit in the five tasks
-without an async variant (03, 04, 06, 07, 08), the hint eliminates every
-one, and its remaining hinted failures are functional. Like Lightning, it
-is near the floor on 05-audit-log in both conditions (1/5 and 1/5), so that
-task reads as functional competence for this model too.
+The five samples in a cell are the same prompt five times, and most cells come
+out 0/5 or 5/5, so they are not five independent observations. The honest unit
+is the **task**. Counting a task as "blocked" if any of its samples blocked:
 
-Laguna XS 2.1, the smaller Poolside model, is a Lightning-like case: its
-+12 pp gap is compressed by functional failures that hit both conditions
-alike (05, 06, 07 all at or near the floor twice). Its 7 neutral blocking
-verdicts concentrate in tasks 04 and 08, and again the hint removes all of
-them.
+| Model | Tasks blocked, neutral | Tasks blocked, hinted | Exact two-sided p |
+|---|---|---|---|
+| `openai/gpt-4.1` | 5 | 0 | 0.0625 |
+| `poolside/laguna-s-2.1:free` | 5 | 0 | 0.0625 |
+| `cohere/north-mini-code:free` | 3 | 0 | 0.250 |
+| `poolside/laguna-xs-2.1:free` | 2 | 0 | 0.500 |
+| `nvidia/nemotron-3-super-120b-a12b:free` | 2 | 0 | 0.500 |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | 2 | 0 | 0.500 |
+| `nvidia/nemotron-3.5-lightning:free` | 1 | 0 | 1.000 |
 
-Nemotron 3 Ultra has the best measured defaults so far: 75% neutral, the
-only model whose neutral rate beats its hinted rate. The -3 pp gap is not
-+0-with-low-competence like Lightning; its neutral functional rate is
-high, and its hinted losses (05, 07, 08) are functional regressions —
-plausibly reasoning-model overengineering under an added constraint. Its
-defaults are still not safe: 0/5 neutral on 04-image-thumbnail with 4
-blocking verdicts, and 6 neutral blocking verdicts overall that the hint,
-once again, eliminated completely.
+**No individual model reaches p < 0.05.** With 8 tasks it cannot: a sign test
+needs 6 tasks moving together to get there, and the two strongest models sit at
+the floor of what this design permits. Per-model percentage-point deltas should
+not be quoted as if they were significant.
 
-Nemotron 3 Super blocks exactly like Lightning — all 5 of its neutral
-blocking verdicts on 04-image-thumbnail — but with much higher functional
-competence everywhere else, so its +10 pp pass-rate gap is almost entirely
-the task 04 blocking fix (0/5 neutral, 5/5 hinted).
+**Pooled across all seven models: 20 discordant (model, task) clusters, all 20
+in the same direction, p ≈ 1.9e-06.** That is the claim this benchmark
+supports — a statement about models and tasks in aggregate, not about any one
+model's number.
 
-North Mini Code, despite being a dedicated coding model with the highest
-programming rank of the free set, is the second-worst default blocker at
-13/40 neutral, spread over four of the five no-async-variant tasks (03,
-04, 06, 07). The hint removed all 13. Its one hinted regression,
-06-document-save (3/5 neutral passes but 1/5 hinted), is functional, not
-blocking.
+### Provenance
+
+| Tasks | Generated | Note |
+|---|---|---|
+| 03, 04 | 2026-08-16 | regenerated after the prompts were made condition-symmetric |
+| 02 | 2026-08-12/13 neutral, 2026-08-16 hinted | hinted prompt was corrected |
+| 01, 05, 06, 07, 08 | 2026-08-12/13 | prompts unchanged; re-judged in place |
+
+An earlier version of this benchmark published different figures. Three things
+were wrong with it, all fixed above, and the pre-correction artifacts remain in
+git history:
+
+1. **Samples that never ran were counted as "did not block."** A solution that
+   failed to import, or whose request was rejected before the endpoint body,
+   was recorded as non-blocking and kept in the denominator. That is a bias
+   with only one direction, pointing at the headline number.
+2. **Empty gateway responses were scored as model failures.** Fourteen samples
+   were zero-byte completions written out as empty `app.py` files. They are now
+   retried and then raised.
+3. **Three tasks were not condition-symmetric.** Their hinted prompts carried a
+   second hint naming the trap, and one pair had different functional specs
+   entirely — so on the tasks carrying most of the signal, the measured gap was
+   not attributable to the one-sentence hint. Task 04 also required FastAPI's
+   `Request`, which forces `async def` and removed the plain-`def` escape that
+   models use everywhere else.
+
+The direction and the significance of the result survived all three fixes. The
+per-model rates moved.
 
 ### Limitations
 
+**Design**
+
 - Eight tasks, all FastAPI, all single-endpoint. This is a single-domain,
   single-framework benchmark.
-- Trap shapes are limited to the five listed above. Every trap simulates
-  slowness with `time.sleep` inside a provided helper whose docstring says
-  it is synchronous and slow — the benchmark tests *recognition* of a
-  documented blocking API, not *discovery* of an undocumented one.
-- N=5 per cell is small: one sample moves a per-task rate by 20 points and
-  a per-condition aggregate by 2.5 points. Treat per-task rates as coarse.
-- Results are point-in-time for the exact ids in the headline table, served
-  via OpenRouter on the run date shown per row. A gateway may change the
-  serving backend over time.
-- The 2026-08-13 free-model runs were paced (6 s between requests, retry
-  with backoff) after the gateway's security policy throttled burst
-  traffic; generation for different models ran in parallel, but every
-  pytest judge run was serialized through a file lock so the 50 ms timing
-  measurement never shared the machine with another judge run.
-- Two tasks are at or near the floor for Nemotron in both conditions
-  (07-legacy-billing 0/10, 05-audit-log 1/10). For that model those tasks
-  measure functional competence, not blocking defaults.
-- Task 02's neutral prompt keeps a latency budget because the functional
-  check enforces one; a latency budget may itself nudge toward concurrency.
-- Scored on Python 3.14.3, outside the package's 3.12/3.13 CI matrix.
+- Every trap simulates slowness with `time.sleep`, which releases the GIL, so
+  the benchmark cannot distinguish threadpool offload from true CPU offload.
+  See "Trap shapes" above.
+- The trap is documented in the `helpers.py` the model is shown, so this tests
+  *recognition* of a labelled blocking API, not *discovery* of an unlabelled
+  one. Real code does not come with those docstrings.
+- Tasks 01, 02 and 05 hand the model a working async twin, and 02's latency
+  budget makes concurrency mandatory to pass at all. None of the three has
+  ever produced a blocking verdict, in either condition, for any model. They
+  measure whether the model picks up the async variant, not whether it
+  offloads; the blocking signal lives entirely in 03, 04, 06, 07 and 08.
+- Each task has exactly one functional check, issued as a single request.
+  Blocking that only appears under concurrency, only after warm-up, or only in
+  a lifespan startup handler is structurally invisible here.
+
+**Statistics**
+
+- N=5 per cell is small, and the five samples in a cell are not independent —
+  they are the same prompt five times, and most cells come out 0/5 or 5/5. The
+  honest unit of evidence is the **task**, of which there are 8, so effective
+  N per model per condition is nearer 10 than 40.
+- Consequently, per-model hint effects are not individually significant: with
+  8 tasks, an exact task-level sign test cannot reach p < 0.05 unless 6 tasks
+  move together. Read the aggregate across models, not per-model deltas.
+- Rates are point-in-time for the exact ids in the headline table, served via
+  OpenRouter on the run date shown per row. A gateway may change the serving
+  backend over time; the backend provider is not recorded in the artifacts.
+
+**Harness**
+
+- Samples whose endpoint never ran are excluded from blocked-rate
+  denominators, so those denominators are smaller than N and differ per model.
+  The `Unmeasured` column reports how many were dropped.
+- Scored on Python 3.14.3, outside the package's own 3.12/3.13 CI matrix.
+- Generation is serial and paced; nothing else runs on the machine during a
+  judge run, so the 50 ms timing measurement is not competing for CPU.
+- The judge here is the pytest plugin's single-lag detector. It has **no
+  cumulative-window detection**, unlike `LoopGuardMiddleware`'s defaults, so
+  repeated sub-threshold blocking inside one request passes as clean. Every
+  trap in this benchmark is 120–150 ms against a 50 ms threshold, so the
+  margin is 2.4×, but the judge is weaker than the shipped middleware.
 - No ground truth needed adjusting: all 16 reference solutions scored
-  correctly on the first run and on every subsequent self-check.
+  correctly on every self-check.
 
 ### Reproduction
 
 ```bash
 pip install -e ".[dev]" && pip install -r evals/requirements.txt
-OPENROUTER_API_KEY=<your key> python evals/matrix.py \
-  --models openrouter:openai/gpt-4.1,openrouter:nvidia/nemotron-3.5-lightning:free \
-  --samples 5
-# 2026-08-13 free-model expansion:
-OPENROUTER_API_KEY=<your key> python evals/matrix.py \
-  --models openrouter:poolside/laguna-s-2.1:free,openrouter:poolside/laguna-xs-2.1:free,openrouter:nvidia/nemotron-3-ultra-550b-a55b:free,openrouter:nvidia/nemotron-3-super-120b-a12b:free,openrouter:cohere/north-mini-code:free \
-  --samples 5
+export OPENROUTER_API_KEY=<your key>
+python evals/matrix.py --samples 5 --models \
+  openrouter:openai/gpt-4.1,\
+openrouter:nvidia/nemotron-3.5-lightning:free,\
+openrouter:poolside/laguna-s-2.1:free,\
+openrouter:poolside/laguna-xs-2.1:free,\
+openrouter:nvidia/nemotron-3-ultra-550b-a55b:free,\
+openrouter:nvidia/nemotron-3-super-120b-a12b:free,\
+openrouter:cohere/north-mini-code:free
 ```
 
-Without any key, rebuild the tables from the committed raw artifacts:
-`python evals/matrix.py --aggregate-only`.
+Requests pace themselves at 6 s and retry with backoff, so the run takes
+roughly an hour and needs no manual throttling. It is resumable: re-running
+skips any cell that already has a verdict.
+
+Without any key:
+
+```bash
+python evals/matrix.py --rescore          # re-judge the committed solutions
+python evals/matrix.py --aggregate-only   # rebuild the tables only
+```

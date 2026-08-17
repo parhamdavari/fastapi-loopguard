@@ -1,7 +1,7 @@
+import asyncio
 from fastapi import FastAPI
 
-import helpers
-import asyncio
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
 

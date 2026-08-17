@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 
 import helpers  # noqa: F401  (the provided API)
 
@@ -6,7 +6,7 @@ app = FastAPI()
 
 
 @app.post("/thumbnail")
-async def create_thumbnail(request: Request):
-    data = await request.body()
+async def create_thumbnail(data: bytes):
+    """Handle POST request to generate a thumbnail."""
     thumbnail = helpers.resize_image(data)
     return {"size": len(thumbnail)}

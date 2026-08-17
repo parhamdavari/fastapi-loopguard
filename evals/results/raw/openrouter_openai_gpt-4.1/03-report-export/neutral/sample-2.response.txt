@@ -2,16 +2,20 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-import helpers  # noqa: F401
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
 
 
 @app.post("/reports")
 async def create_report(request: Request):
-    data = await request.json()
-    rows = data.get("rows", [])
+    body = await request.json()
+    rows = body.get("rows")
+    if rows is None or not isinstance(rows, list):
+        return JSONResponse(
+            content={"detail": "Missing or invalid 'rows'."},
+            status_code=400,
+        )
     rendered = helpers.render_report(rows)
-    length = len(rendered)
-    return JSONResponse(content={"length": length}, status_code=200)
+    return {"length": len(rendered)}
 ```

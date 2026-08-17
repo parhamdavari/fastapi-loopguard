@@ -2,15 +2,14 @@ from fastapi import FastAPI, Body
 from fastapi.responses import JSONResponse
 import asyncio
 
-import helpers  # noqa: F401  (the provided API)
+import helpers
 
 app = FastAPI()
 
-
 @app.post("/documents")
 async def save_document(
-    name: str = Body(..., embed=True),
-    text: str = Body(..., embed=True),
+    name: str = Body(...),
+    text: str = Body(...),
 ):
     bytes_written = await asyncio.to_thread(helpers.save_document, name, text)
     return JSONResponse(

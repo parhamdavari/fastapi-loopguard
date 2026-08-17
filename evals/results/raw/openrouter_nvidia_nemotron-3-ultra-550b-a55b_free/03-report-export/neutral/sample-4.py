@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import asyncio
 
 import helpers  # noqa: F401  (the provided API)
 
@@ -12,7 +11,6 @@ class ReportRequest(BaseModel):
 
 
 @app.post("/reports")
-async def create_report(request: ReportRequest):
-    loop = asyncio.get_event_loop()
-    rendered = await loop.run_in_executor(None, helpers.render_report, request.rows)
+def create_report(request: ReportRequest):
+    rendered = helpers.render_report(request.rows)
     return {"length": len(rendered)}

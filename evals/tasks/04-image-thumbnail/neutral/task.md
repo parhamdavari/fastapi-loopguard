@@ -7,4 +7,4 @@ Implement `POST /thumbnail` accepting a raw request body of image bytes:
 - Return `{"size": <len of thumbnail bytes>}` with status 200.
 
 Constraints:
-- Use only `helpers.py`, FastAPI's `Request`, and the standard library.
+- Use only `helpers.py` and the standard library.

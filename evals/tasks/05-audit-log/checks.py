@@ -16,3 +16,4 @@ async def test_creates_order_with_audit_line():
     assert response.status_code == 201
     assert response.json() == {"status": "created"}
     assert helpers.AUDIT == ["order:widget"]
+    assert helpers.calls() >= 1, "the solution never called the provided helper"

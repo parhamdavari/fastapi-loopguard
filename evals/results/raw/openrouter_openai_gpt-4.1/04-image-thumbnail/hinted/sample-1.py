@@ -1,13 +1,15 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import helpers  # noqa: F401
+import helpers
 import asyncio
 
 app = FastAPI()
+
 
 @app.post("/thumbnail")
 async def create_thumbnail(request: Request):
     data = await request.body()
     loop = asyncio.get_running_loop()
-    thumbnail = await loop.run_in_executor(None, helpers.resize_image, data)
-    return JSONResponse({"size": len(thumbnail)})
+    # Offload to default executor to avoid blocking the event loop
+    thumbnail_bytes = await loop.run_in_executor(None, helpers.resize_image, data)
+    return JSONResponse(content={"size": len(thumbnail_bytes)}, status_code=200)

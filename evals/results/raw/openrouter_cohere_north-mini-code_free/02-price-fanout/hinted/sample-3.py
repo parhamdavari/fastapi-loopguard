@@ -1,18 +1,17 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 import asyncio
 import helpers  # noqa: F401
 
 app = FastAPI()
 
 @app.get("/portfolio")
-async def get_portfolio(symbols: str = Query(..., description="Comma-separated list of symbols")):
-    # Split and clean symbols
-    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
-
-    # Concurrently fetch all prices
-    tasks = [helpers.afetch_price(sym) for sym in symbol_list]
-    results = await asyncio.gather(*tasks)
-
-    # Build response dict
-    prices_dict = {sym: price for sym, price in zip(symbol_list, results)}
+async def portfolio(symbols: str):
+    # Parse comma-separated symbols, stripping whitespace
+    symbols_list = [sym.strip() for sym in symbols.split(",")]
+    # Create an async fetch task for each symbol
+    tasks = [helpers.afetch_price(sym) for sym in symbols_list]
+    # Run all fetches concurrently (non‑blocking)
+    prices = await asyncio.gather(*tasks)
+    # Build the required response format
+    prices_dict = {sym: price for sym, price in zip(symbols_list, prices)}
     return {"prices": prices_dict}

@@ -1,7 +1,8 @@
 ```python
 from fastapi import FastAPI
-
-import helpers  # noqa: F401  (the provided API)
+from fastapi.responses import JSONResponse
+import asyncio
+import helpers
 
 app = FastAPI()
 
@@ -9,7 +10,11 @@ app = FastAPI()
 @app.get("/portfolio")
 async def portfolio(symbols: str):
     symbol_list = symbols.split(",")
-    tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
-    prices = await app.__dict__["_gather"](*tasks) if hasattr(app, "_gather") else await all(prices_coros := [helpers.afetch_price(s) for s in symbol_list]) or (await __import__("asyncio").gather(*prices_coros))
-    return {"prices": dict(zip(symbol_list, prices))}
+    prices = await asyncio.gather(
+        *[helpers.afetch_price(symbol) for symbol in symbol_list]
+    )
+    result = {
+        "prices": {symbol: price for symbol, price in zip(symbol_list, prices)}
+    }
+    return JSONResponse(content=result)
 ```

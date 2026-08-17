@@ -45,6 +45,20 @@ assert _match is not None
 THRESHOLD_MS = int(_match.group(1))
 
 
+def is_measured(record: dict[str, Any]) -> bool:
+    """Did this sample's endpoint actually run under the sentinel?
+
+    Only a measured sample belongs in a blocked-rate denominator. Records
+    written before the `measured` field existed recorded a collection failure
+    as `non_blocking: true`; for those, fall back to reading the pytest tail.
+    Re-score with `--rescore` to replace the guess with a real answer.
+    """
+    if "measured" in record:
+        return bool(record["measured"])
+    tail = " ".join(record.get("pytest_tail", []))
+    return "error during collection" not in tail and "ERROR test_checks" not in tail
+
+
 def environment() -> dict[str, str | int]:
     """Run environment recorded with every result."""
     return {
@@ -80,7 +94,9 @@ def self_check(tasks: list[Path]) -> dict[str, Any]:
             total += 1
             verdict = runner.score_task(task, task / "reference" / f"{ref}.py")
             got = verdict["score"]
-            ok = got == expected
+            # A reference that never ran proves nothing about the judge, so an
+            # unmeasured reference is a miscall too.
+            ok = got == expected and verdict["measured"] is True
             if ref == "blocking":
                 ok = ok and verdict["non_blocking"] is False
             status = "ok" if ok else "MISCALL"
@@ -148,23 +164,26 @@ def generate_matrix(
                         sample=sample,
                         temperature=temperature,
                     )
+                    # Scoring is inside the guard too: a judge crash or a
+                    # timeout must cost one cell, not the whole run.
                     try:
                         result = adapter.generate(request)
+                        response_path = cell_dir / f"sample-{sample}.response.txt"
+                        solution_path = cell_dir / f"sample-{sample}.py"
+                        response_path.write_text(result.text)
+                        solution_path.write_text(extract_code(result.text))
+                        verdict = runner.score_task(task_dir, solution_path)
                     except Exception as exc:  # noqa: BLE001 - keep the run alive
                         print(
                             f"ERROR {adapter.name} {task_dir.name}/{condition}"
                             f"/sample-{sample}: {exc}"
                         )
                         continue
-                    response_path = cell_dir / f"sample-{sample}.response.txt"
-                    solution_path = cell_dir / f"sample-{sample}.py"
-                    response_path.write_text(result.text)
-                    solution_path.write_text(extract_code(result.text))
-                    verdict = runner.score_task(task_dir, solution_path)
                     record: dict[str, Any] = {
                         **verdict,
                         "requested_model": adapter.name,
                         "returned_model_id": result.model_id,
+                        "finish_reason": result.finish_reason,
                         "condition": condition,
                         "sample": sample,
                         "temperature": temperature,
@@ -177,9 +196,71 @@ def generate_matrix(
                     print(
                         f"{adapter.name} {task_dir.name}/{condition}"
                         f"/sample-{sample}: score={record['score']}"
+                        f" measured={record['measured']}"
                         f" non_blocking={record['non_blocking']}"
                     )
     return skipped
+
+
+GENERATION_FIELDS = (
+    "requested_model",
+    "returned_model_id",
+    "finish_reason",
+    "condition",
+    "sample",
+    "temperature",
+    "run_date",
+    "python_version",
+    "loopguard_version",
+    "threshold_ms",
+)
+
+
+def rescore_matrix(tasks: list[Path], raw_dir: Path) -> int:
+    """Re-judge every persisted solution in place. No API calls, no cost.
+
+    Generation is the expensive half; scoring is free. When the judge changes,
+    this replays it over the committed solutions and rewrites the verdicts,
+    preserving the generation metadata that records where each came from.
+    Prompts are unchanged, so the solutions stay valid evidence.
+
+    `app.py` is re-derived from the archived raw response first. The response
+    is the evidence; the solution file is only this harness's reading of it, so
+    an extraction fix has to reach the archive or old parsing bugs stay frozen
+    into the published numbers as model failures.
+    """
+    by_name = {task.name: task for task in tasks}
+    rescored = 0
+    for solution in sorted(raw_dir.glob("*/*/*/sample-*.py")):
+        verdict_path = solution.parent / f"{solution.stem}.verdict.json"
+        if not verdict_path.exists():
+            print(f"SKIP {solution}: no existing verdict to carry metadata from")
+            continue
+        response_path = solution.parent / f"{solution.stem}.response.txt"
+        if response_path.exists():
+            response = response_path.read_text()
+            if response.strip():
+                reextracted = extract_code(response)
+                if reextracted.strip() != solution.read_text().strip():
+                    solution.write_text(reextracted)
+                    print(f"RE-EXTRACTED {solution.relative_to(raw_dir)}")
+        previous = json.loads(verdict_path.read_text())
+        task_name = previous["task"]
+        if task_name not in by_name:
+            continue
+        verdict = runner.score_task(by_name[task_name], solution)
+        record = {
+            **verdict,
+            **{k: previous[k] for k in GENERATION_FIELDS if k in previous},
+        }
+        verdict_path.write_text(json.dumps(record, indent=2))
+        rescored += 1
+        print(
+            f"{previous['requested_model']} {task_name}/{previous['condition']}"
+            f"/sample-{previous['sample']}: score={record['score']}"
+            f" measured={record['measured']} non_blocking={record['non_blocking']}"
+        )
+    return rescored
 
 
 def load_records(raw_dir: Path) -> list[dict[str, Any]]:
@@ -200,16 +281,23 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     def rates(group: list[dict[str, Any]]) -> dict[str, Any]:
         n = len(group)
         passed = sum(1 for r in group if r["score"] == 1)
-        blocked = sum(1 for r in group if not r["non_blocking"])
+        # A sample whose endpoint never ran was never tested for blocking.
+        # It must leave the blocked-rate denominator entirely: counting it as
+        # "did not block" biases the headline in exactly one direction.
+        measured = [r for r in group if is_measured(r)]
+        n_measured = len(measured)
+        blocked = sum(1 for r in measured if r["non_blocking"] is False)
         functional_fail_only = sum(
-            1 for r in group if r["non_blocking"] and r["score"] == 0
+            1 for r in measured if r["non_blocking"] and r["score"] == 0
         )
         return {
             "n": n,
             "passed": passed,
             "pass_rate": passed / n if n else None,
+            "n_measured": n_measured,
+            "unmeasured": n - n_measured,
             "blocked": blocked,
-            "blocked_rate": blocked / n if n else None,
+            "blocked_rate": blocked / n_measured if n_measured else None,
             "functional_fail_only": functional_fail_only,
         }
 
@@ -230,11 +318,59 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {"cells": cell_rows, "models": model_rows}
 
 
+def warn_incomplete(records: list[dict[str, Any]], samples: int) -> None:
+    """Say out loud what the tables would otherwise hide.
+
+    A short cell and an unmeasured sample both silently shrink the evidence
+    behind a published number, so neither may pass without a line on stdout.
+    """
+    cells: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        key = (record["requested_model"], record["task"], record["condition"])
+        cells[key].append(record)
+
+    for (model, task, condition), group in sorted(cells.items()):
+        if len(group) != samples:
+            print(
+                f"WARNING short cell: {model} {task}/{condition}"
+                f" has n={len(group)}, expected {samples}"
+            )
+
+    unmeasured = [r for r in records if not is_measured(r)]
+    if unmeasured:
+        by_condition: dict[str, int] = defaultdict(int)
+        for record in unmeasured:
+            by_condition[record["condition"]] += 1
+        breakdown = ", ".join(f"{c}={n}" for c, n in sorted(by_condition.items()))
+        print(
+            f"WARNING {len(unmeasured)}/{len(records)} sample(s) never ran their"
+            f" endpoint ({breakdown}); they are excluded from blocked rates."
+        )
+
+    legacy = [r for r in records if "measured" not in r]
+    if legacy:
+        print(
+            f"WARNING {len(legacy)} record(s) predate the `measured` field;"
+            " their measured status is inferred. Run --rescore to fix."
+        )
+
+
 def fmt_rate(row: dict[str, Any] | None) -> str:
     """`k/n (xx%)` for a rate row, or `not run`."""
     if row is None or not row["n"]:
         return "not run"
     return f"{row['passed']}/{row['n']} ({100 * row['pass_rate']:.0f}%)"
+
+
+def fmt_blocked(row: dict[str, Any] | None) -> str:
+    """`k/measured (xx%)` for a blocked rate, or `not run`.
+
+    The denominator is measured samples, never generated ones: a solution
+    that never ran is not evidence that it did not block.
+    """
+    if row is None or not row["n_measured"]:
+        return "not run"
+    return f"{row['blocked']}/{row['n_measured']} ({100 * row['blocked_rate']:.0f}%)"
 
 
 def render_markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
@@ -243,6 +379,32 @@ def render_markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
     by_mc = {(r["model"], r["condition"]): r for r in summary["models"]}
     lines = [
         "# Results",
+        "",
+        "## Headline: blocking verdicts per condition (blocked/measured)",
+        "",
+        "Denominators count only samples whose endpoint actually ran. Samples"
+        " that failed to import, or were rejected before the endpoint body,"
+        " were never tested for blocking and are excluded.",
+        "",
+        "| Model | Neutral | Hinted | Unmeasured (neutral/hinted) |",
+        "|---|---|---|---|",
+    ]
+    for model in models:
+        neutral = by_mc.get((model, "neutral"))
+        hinted = by_mc.get((model, "hinted"))
+        dropped = (
+            f"{neutral['unmeasured'] if neutral else 0}"
+            f"/{hinted['unmeasured'] if hinted else 0}"
+        )
+        lines.append(
+            f"| {model} | {fmt_blocked(neutral)} | {fmt_blocked(hinted)} | {dropped} |"
+        )
+    lines += [
+        "",
+        "## Context: overall pass rates (blocking AND functional failures)",
+        "",
+        "These conflate the two failure kinds. Read them next to the table"
+        " above, not instead of it.",
         "",
         "| Model | Neutral pass rate | Hinted pass rate | Gap (hinted - neutral) |",
         "|---|---|---|---|",
@@ -296,11 +458,25 @@ def main() -> int:
     parser.add_argument("--conditions", default=",".join(CONDITIONS))
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument(
+        "--request-interval",
+        type=float,
+        default=None,
+        help="minimum seconds between requests to one provider."
+        " Defaults to 6 s for openrouter (its WAF rejects bursts), 0 otherwise.",
+    )
     parser.add_argument("--results-dir", type=Path, default=EVALS_DIR / "results")
     parser.add_argument(
         "--aggregate-only",
         action="store_true",
         help="rebuild results.json/results.md from existing raw artifacts",
+    )
+    parser.add_argument(
+        "--rescore",
+        action="store_true",
+        help="re-judge every persisted solution in place, then aggregate."
+        " No API calls: use after a judge change to refresh verdicts without"
+        " paying to regenerate solutions.",
     )
     args = parser.parse_args()
 
@@ -310,11 +486,20 @@ def main() -> int:
 
     check: dict[str, Any] = {"total": 0, "errors": [], "error_rate": "not run"}
     skipped: list[str] = []
-    if not args.aggregate_only:
-        if not args.models:
-            parser.error("--models is required unless --aggregate-only is given")
+    if args.rescore:
         check = self_check(tasks)
-        adapters = [build_adapter(spec) for spec in args.models.split(",")]
+        print(f"== re-scoring persisted solutions under {raw_dir} ==")
+        print(f"re-scored {rescore_matrix(tasks, raw_dir)} sample(s)")
+    elif not args.aggregate_only:
+        if not args.models:
+            parser.error(
+                "--models is required unless --aggregate-only or --rescore is given"
+            )
+        check = self_check(tasks)
+        adapters = [
+            build_adapter(spec, args.request_interval)
+            for spec in args.models.split(",")
+        ]
         skipped = generate_matrix(
             adapters, tasks, conditions, args.samples, args.temperature, raw_dir
         )
@@ -323,6 +508,7 @@ def main() -> int:
     if not records:
         print("no verdict records under", raw_dir)
         return 1
+    warn_incomplete(records, args.samples)
     summary = aggregate(records)
     meta = {
         "generated_at": datetime.datetime.now(datetime.UTC).isoformat(
@@ -330,6 +516,7 @@ def main() -> int:
         ),
         "samples": args.samples,
         "temperature": args.temperature,
+        "request_interval": args.request_interval,
         "environment": environment(),
         "judge_self_check": check,
         "skipped_models": skipped,

@@ -1,13 +1,5 @@
-To solve this, we need to implement a FastAPI endpoint that processes a CPU-bound report rendering task without blocking the event loop. The key challenge is ensuring that the synchronous, CPU-intensive `helpers.render_report()` function doesn't block the event loop which would prevent handling other incoming requests.
-
-### Approach
-The solution involves offloading the CPU-bound task to a separate thread using `asyncio.to_thread()`. This function allows us to run a synchronous function in a separate thread, thereby keeping the event loop free to handle other tasks concurrently. By doing this, the event loop can continue processing other incoming requests while the report rendering happens in the background thread.
-
-### Solution Code
 ```python
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-import asyncio
+from fastapi import FastAPI, BackgroundTasks
 
 import helpers
 
@@ -15,15 +7,29 @@ app = FastAPI()
 
 
 @app.post("/reports")
-async def generate_report(request_body: dict):
-    rows = request_body["rows"]
-    rendered_report = await asyncio.to_thread(helpers.render_report, rows)
-    return JSONResponse({"length": len(rendered_report)}, status_code=200)
+async def create_report(rows: list):
+    report = await run_in_threadpool(helpers.render_report, rows)
+    return {"length": len(report)}
 ```
 
-### Explanation
-1. **Endpoint Definition**: The endpoint `POST /reports` is defined using FastAPI's `@app.post` decorator. It expects a JSON body containing a list under the "rows" key.
-2. **Offloading CPU Work**: The synchronous `helpers.render_report(rows)` function is executed in a separate thread using `asyncio.to_thread()`. This prevents blocking the event loop.
-3. **Returning the Result**: After the rendering is complete, the length of the resulting string is returned in a JSON response with a 200 status code.
+**Note:** The code above assumes you have `anyio` installed (which FastAPI already depends on). If you want to stick strictly to the standard library, here's the adjusted version using `concurrent.futures` with `asyncio.get_event_loop().run_in_executor`:
 
-This approach efficiently handles the CPU-bound task without blocking the event loop, ensuring that the application remains responsive to other incoming requests.
+```python
+from fastapi import FastAPI
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+import helpers
+
+app = FastAPI()
+
+# Create a shared thread pool executor
+executor = ThreadPoolExecutor(max_workers=4)
+
+
+@app.post("/reports")
+async def create_report(rows: list):
+    loop = asyncio.get_event_loop()
+    report = await loop.run_in_executor(executor, helpers.render_report, rows)
+    return {"length": len(report)}
+```

@@ -2,16 +2,21 @@
   "task": "06-document-save",
   "functional": "unknown",
   "non_blocking": false,
+  "measured": true,
   "score": 0,
   "flagged": [
     "test_checks.py::test_saves_document"
   ],
   "detail": "1 test(s) blocked the event loop",
+  "returncode": 1,
+  "tests_run": 1,
+  "trap_calls": 1,
   "pytest_tail": [
     "=========================== short test summary info ============================",
     "FAILED test_checks.py::test_saves_document - assert 200 == 201",
-    "1 failed in 0.27s"
+    "1 failed in 0.28s"
   ],
+  "stderr_tail": [],
   "requested_model": "openrouter:poolside/laguna-s-2.1:free",
   "returned_model_id": "poolside/laguna-s-2.1:free",
   "condition": "neutral",

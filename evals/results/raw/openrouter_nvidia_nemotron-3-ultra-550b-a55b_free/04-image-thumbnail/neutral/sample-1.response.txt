@@ -7,7 +7,7 @@ app = FastAPI()
 
 
 @app.post("/thumbnail")
-async def create_thumbnail(request: Request):
+async def create_thumbnail(request: Request) -> dict:
     data = await request.body()
     thumbnail = helpers.resize_image(data)
     return {"size": len(thumbnail)}

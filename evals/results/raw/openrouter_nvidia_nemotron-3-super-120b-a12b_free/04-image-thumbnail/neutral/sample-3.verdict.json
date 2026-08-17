@@ -2,22 +2,28 @@
   "task": "04-image-thumbnail",
   "functional": "unknown",
   "non_blocking": false,
+  "measured": true,
   "score": 0,
   "flagged": [
     "test_checks.py::test_thumbnail_size"
   ],
   "detail": "1 test(s) blocked the event loop",
+  "returncode": 1,
+  "tests_run": 1,
+  "trap_calls": 1,
   "pytest_tail": [
     "=========================== short test summary info ============================",
     "FAILED test_checks.py::test_thumbnail_size - Failed: Event loop blocking dete...",
-    "1 failed in 0.30s"
+    "1 failed in 0.32s"
   ],
+  "stderr_tail": [],
   "requested_model": "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
   "returned_model_id": "nvidia/nemotron-3-super-120b-a12b:free",
+  "finish_reason": "stop",
   "condition": "neutral",
   "sample": 3,
   "temperature": 1.0,
-  "run_date": "2026-08-13T11:32:56+00:00",
+  "run_date": "2026-08-16T20:55:50+00:00",
   "python_version": "3.14.3",
   "loopguard_version": "0.6.1",
   "threshold_ms": 50

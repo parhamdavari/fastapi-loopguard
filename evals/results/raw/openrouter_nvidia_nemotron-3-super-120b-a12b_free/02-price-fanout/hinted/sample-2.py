@@ -6,16 +6,23 @@ app = FastAPI()
 
 
 @app.get("/portfolio")
-async def portfolio(symbols: str = ""):
-    # Split the comma‑separated list, ignore empty parts
-    sym_list = [s.strip() for s in symbols.split(",") if s.strip()]
-    if not sym_list:
+async def portfolio(symbols: str):
+    """
+    Return prices for the given comma‑separated symbols.
+    Example: /portfolio?symbols=AAA,BBB,CCC
+    """
+    if not symbols:
         return {"prices": {}}
 
-    # Create a coroutine for each symbol using the async helper
-    coroutines = [helpers.afetch_price(sym) for sym in sym_list]
-    # Run them concurrently; total latency ≈ one fetch
+    # Split the query string into individual symbols, stripping whitespace.
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+
+    # Create a list of coroutines to fetch each price concurrently.
+    coroutines = [helpers.afetch_price(sym) for sym in symbol_list]
+
+    # Run all coroutines concurrently and gather their results.
     prices = await asyncio.gather(*coroutines)
 
-    # Build the result dict
-    return {"prices": dict(zip(sym_list, prices))}
+    # Build the response dictionary.
+    result = {sym: price for sym, price in zip(symbol_list, prices)}
+    return {"prices": result}

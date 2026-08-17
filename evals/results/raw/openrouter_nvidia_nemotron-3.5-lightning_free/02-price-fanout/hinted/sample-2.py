@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Query
-import helpers
 import asyncio
+import helpers
 
 app = FastAPI()
 
@@ -8,5 +8,7 @@ app = FastAPI()
 @app.get("/portfolio")
 async def portfolio(symbols: str = Query(...)):
     sym_list = [s.strip() for s in symbols.split(",") if s.strip()]
-    prices = await asyncio.gather(*(helpers.afetch_price(s) for s in sym_list))
-    return {"prices": dict(zip(sym_list, prices))}
+    tasks = [helpers.afetch_price(s) for s in sym_list]
+    prices_list = await asyncio.gather(*tasks)
+    prices = {sym: price for sym, price in zip(sym_list, prices_list)}
+    return {"prices": prices}

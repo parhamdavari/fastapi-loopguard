@@ -1,35 +1,28 @@
-To solve this problem, we need to create an endpoint that fetches prices for multiple symbols concurrently, ensuring that the total latency remains close to a single fetch rather than the sum of all fetches. We will achieve this by using asynchronous operations and concurrent execution.
+To solve this problem, we need to create an endpoint that fetches stock prices for multiple symbols concurrently using an asynchronous API provided in `helpers.py`. The endpoint should respond with all prices in under 0.3 seconds and must not block the event loop.
 
 ### Approach
-1. **Concurrent Fetching**: Use the asynchronous `afetch_price` method provided in `helpers` to fetch prices concurrently.
-2. **Event Loop Management**: Ensure that the endpoint doesn't block the event loop by using asynchronous operations.
-3. **FastAPI Setup**: Define a route that parses the `symbols` query parameter, splits it into individual symbols, and initiates concurrent fetches.
-4. **Response Handling**: Collect the results from all concurrent fetches and structure them into the required JSON response format.
+1. **Problem Analysis**: The task requires fetching prices for multiple symbols concurrently to meet the time constraint. Using a synchronous API would block the event loop and take too long for multiple symbols. Instead, we use `asyncio.gather` to run multiple `afetch_price` calls concurrently.
+2. **Concurrency Strategy**: By using `asyncio.gather`, we can wait for all asynchronous API calls to complete in parallel, significantly reducing the total time compared to sequential calls. This approach ensures that the maximum time taken is roughly the time of the slowest single call (0.12 seconds) plus minimal overhead, which stays well under the 0.3-second limit.
+3. **Implementation**: The endpoint reads symbols from query parameters, splits them into individual symbol strings, then uses `asyncio.gather` to fetch all prices concurrently. The results are formatted into a JSON response with a 200 status code.
 
 ### Solution Code
+
 ```python
 from fastapi import FastAPI
-from typing import List, Dict
 
-import helpers
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
 
 
 @app.get("/portfolio")
-async def get_portfolio(symbols: str):
-    symbol_list = symbols.split(',')
-    tasks = [helpers.afetch_price(symbol) for symbol in symbol_list]
-    prices_list = await helpers.asyncio.gather(*tasks)
-    prices = {symbol: price for symbol, price in zip(symbol_list, prices_list)}
-    return {"prices": prices}
+async def portfolio(symbols: str):
+    symbols_list = symbols.split(',')
+    prices = await asyncio.gather(*(helpers.afetch_price(symbol) for symbol in symbols_list))
+    return {"prices": {symbol: price for symbol, price in zip(symbols_list, prices)}}
 ```
 
 ### Explanation
-1. **Route Definition**: The route `/portfolio` is defined to handle GET requests. It expects a query parameter `symbols` which is a comma-separated string.
-2. **Symbol Splitting**: The `symbols` parameter is split into a list of individual symbol strings.
-3. **Concurrent Tasks**: For each symbol, an asynchronous task (`afetch_price`) is created. These tasks are gathered using `asyncio.gather`, which allows them to run concurrently.
-4. **Result Aggregation**: The results from all concurrent tasks are collected into a dictionary mapping each symbol to its price.
-5. **Response**: The aggregated results are returned in the required JSON format with a status code of 200.
-
-This approach ensures that all price fetches happen concurrently, keeping the total latency close to a single fetch time rather than the sum of all fetches, thus efficiently utilizing asynchronous operations without blocking the event loop.
+- **`portfolio` Function**: This is an async endpoint that reads the `symbols` query parameter, splits it into a list of symbols using comma as the delimiter.
+- **Concurrent Fetching**: `asyncio.gather` is used to run `helpers.afetch_price(symbol)` for each symbol concurrently. This allows all API requests to be processed in parallel.
+- **Response Construction**: A dictionary comprehension is used to map each symbol to its fetched price, and the result is returned as a JSON response. The use of `asyncio.gather` ensures that the entire operation completes in approximately the time of the longest single fetch operation (0.12 seconds), plus minimal overhead, thus meeting the 0.3-second requirement.

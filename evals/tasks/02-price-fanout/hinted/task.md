@@ -1,12 +1,11 @@
-# Task: portfolio price fan-out
+# Task: portfolio price endpoint
 
 Complete `app_skeleton.py` (save your result as `app.py`).
 
 Implement `GET /portfolio?symbols=AAA,BBB,CCC`:
 - Fetch the price of every symbol with the API in `helpers.py`.
-- Fetch them concurrently: total latency must stay close to one fetch,
-  not the sum of all fetches.
 - Return `{"prices": {symbol: price, ...}}` with status 200.
+- A request for three symbols must complete in under 0.3 seconds.
 
 Constraints:
 - The endpoint must not block the event loop.

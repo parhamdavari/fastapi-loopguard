@@ -11,6 +11,6 @@ app = FastAPI()
 async def create_report(request: Request):
     body = await request.json()
     rows = body.get("rows", [])
-    result = helpers.render_report(rows)
-    return JSONResponse(content={"length": len(result)}, status_code=200)
+    rendered = helpers.render_report(rows)
+    return JSONResponse(content={"length": len(rendered)}, status_code=200)
 ```

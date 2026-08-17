@@ -1,0 +1,22 @@
+```python
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import asyncio
+
+import helpers  # noqa: F401  (the provided API)
+
+app = FastAPI()
+
+
+class ReportRequest(BaseModel):
+    rows: list
+
+
+@app.post("/reports")
+async def create_report(request: ReportRequest):
+    try:
+        rendered = await asyncio.to_thread(helpers.render_report, request.rows)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"length": len(rendered)}
+```

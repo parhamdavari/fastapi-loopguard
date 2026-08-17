@@ -8,16 +8,21 @@ app = FastAPI()
 
 @app.get("/portfolio")
 async def portfolio(symbols: str = ""):
-    # Split the comma‑separated list, ignore empty entries
-    sym_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    """
+    Return current prices for the given comma‑separated symbols.
+    Example: GET /portfolio?symbols=AAA,BBB,CCC
+    """
+    if not symbols:
+        return {"prices": {}}
+
+    # Split, strip whitespace, and normalise to upper case
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     if not sym_list:
         return {"prices": {}}
 
-    # Launch all async fetches concurrently
-    tasks = [helpers.afetch_price(sym) for sym in sym_list]
-    prices = await asyncio.gather(*tasks)
+    # Fetch all prices concurrently using the async helper
+    coros = [helpers.afetch_price(sym) for sym in sym_list]
+    prices = await asyncio.gather(*coros)
 
-    # Build the response dictionary
-    result = {sym: price for sym, price in zip(sym_list, prices)}
-    return {"prices": result}
+    return {"prices": dict(zip(sym_list, prices))}
 ```

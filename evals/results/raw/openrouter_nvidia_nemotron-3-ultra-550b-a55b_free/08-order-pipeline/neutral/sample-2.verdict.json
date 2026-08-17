@@ -2,14 +2,19 @@
   "task": "08-order-pipeline",
   "functional": true,
   "non_blocking": true,
+  "measured": true,
   "score": 1,
   "flagged": [],
   "detail": "all checks passed without blocking",
+  "returncode": 0,
+  "tests_run": 1,
+  "trap_calls": 1,
   "pytest_tail": [
     "",
     "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
-    "1 passed, 1 warning in 0.28s"
+    "1 passed, 1 warning in 0.32s"
   ],
+  "stderr_tail": [],
   "requested_model": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
   "returned_model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "condition": "neutral",

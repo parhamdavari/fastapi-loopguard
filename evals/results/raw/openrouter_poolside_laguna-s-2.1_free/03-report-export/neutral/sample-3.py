@@ -1,12 +1,17 @@
-from fastapi import FastAPI, Request
-import helpers
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List, Any
+
+import helpers  # noqa: F401  (the provided API)
 
 app = FastAPI()
 
 
+class ReportRequest(BaseModel):
+    rows: List[Any]
+
+
 @app.post("/reports")
-async def reports(request: Request):
-    body = await request.json()
-    rows = body.get("rows", [])
-    rendered = helpers.render_report(rows)
+def generate_report(request: ReportRequest):
+    rendered = helpers.render_report(request.rows)
     return {"length": len(rendered)}

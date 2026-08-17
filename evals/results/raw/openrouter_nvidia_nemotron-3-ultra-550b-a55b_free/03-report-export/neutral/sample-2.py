@@ -12,6 +12,6 @@ class ReportRequest(BaseModel):
 
 
 @app.post("/reports")
-async def create_report(request: ReportRequest):
+def create_report(request: ReportRequest):
     rendered = helpers.render_report(request.rows)
     return {"length": len(rendered)}

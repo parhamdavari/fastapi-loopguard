@@ -1,4 +1,4 @@
-```pythonfrom fastapi import FastAPI, Body
+from fastapi import FastAPI, Body
 from pydantic import BaseModel
 
 import helpers  # noqa: F401  (the provided API)
@@ -14,4 +14,3 @@ class OrderRequest(BaseModel):
 async def create_order(order: OrderRequest):
     await helpers.aappend_audit_line(f"order:{order.item}")
     return {"status": "created"}
-```

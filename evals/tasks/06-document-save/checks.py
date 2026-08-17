@@ -18,3 +18,4 @@ async def test_saves_document():
     assert response.status_code == 201
     assert response.json() == {"bytes": 5}
     assert helpers.SAVED == {"a.txt": "hello"}
+    assert helpers.calls() >= 1, "the solution never called the provided helper"
