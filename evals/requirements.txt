@@ -1,7 +1,7 @@
 # Eval-harness-only dependencies. NOT runtime dependencies of the package.
 
 # The API adapters. The local adapter works without them.
-anthropic>=0.40
+anthropic>=1.2.0
 openai>=1.50
 
 # Optional FastAPI dependencies a *solution* may reach for. Without these the
