@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import TYPE_CHECKING
 
@@ -10,7 +11,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware
+from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware, SentinelMonitor
 from fastapi_loopguard.context import get_active_requests, get_registry
 
 if TYPE_CHECKING:
@@ -710,3 +711,297 @@ class TestStrictModeBystanders:
         assert culprit.status_code == 503
         # The bystander was in flight during the stall, so it is 503'd too
         assert bystander.status_code == 503
+
+
+class TestBlockingWithoutTrailingAwait:
+    """A handler that blocks and returns with no await is still caught.
+
+    This is the ordinary shape of blocking handler code. The monitor's sleep
+    expires during the block but never resumes, so without an explicit poll
+    on the response path the stall is attributed to no request at all and the
+    response reports zero blocking.
+    """
+
+    async def test_strict_mode_returns_503(self) -> None:
+        """Strict mode fails a handler that blocks then returns."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="strict",
+                fallback_threshold_ms=20.0,
+            ),
+        )
+
+        @app.get("/blocking")
+        async def blocking() -> dict[str, bool]:
+            time.sleep(0.2)  # no await afterwards - the whole point
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/blocking")
+
+        assert response.status_code == 503
+        assert response.headers["x-loopguard-enforcement"] == "strict"
+        assert int(response.headers["x-blocking-count"]) > 0
+
+    async def test_warn_mode_reports_in_headers(self) -> None:
+        """Warn mode reports the stall in headers rather than a 503."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="warn",
+                fallback_threshold_ms=20.0,
+            ),
+        )
+
+        @app.get("/blocking")
+        async def blocking() -> dict[str, bool]:
+            time.sleep(0.2)
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/blocking")
+
+        assert response.status_code == 200
+        assert response.headers["x-blocking-detected"] == "true"
+        assert response.headers["x-loopguard-warning"] == "blocking-detected"
+
+    async def test_clean_handler_stays_clean(self) -> None:
+        """A handler that only awaits is not flagged by the response-path poll."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="strict",
+                fallback_threshold_ms=20.0,
+            ),
+        )
+
+        @app.get("/clean")
+        async def clean() -> dict[str, bool]:
+            await asyncio.sleep(0.05)
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/clean")
+
+        assert response.status_code == 200
+        assert response.headers["x-blocking-detected"] == "false"
+
+
+class TestErrorPageEscaping:
+    """The strict 503 page reflects a client-controlled path and method."""
+
+    async def test_html_page_escapes_the_request_path(self) -> None:
+        """An unescaped path here is reflected XSS on the app's own origin."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="strict",
+                fallback_threshold_ms=20.0,
+            ),
+        )
+
+        @app.get("/{item}")
+        async def item(item: str) -> dict[str, bool]:
+            time.sleep(0.2)
+            return {"ok": True}
+
+        payload = "<img src=x onerror=alert(1)>"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(f"/{payload}", headers={"accept": "text/html"})
+
+        assert response.status_code == 503
+        assert "text/html" in response.headers["content-type"]
+        assert payload not in response.text
+        assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
+
+    async def test_console_banner_escapes_control_characters(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A newline in the path must not forge a line in stderr."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="warn",
+                fallback_threshold_ms=20.0,
+            ),
+        )
+
+        @app.get("/{item}")
+        async def item(item: str) -> dict[str, bool]:
+            time.sleep(0.2)
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.get("/a%0AFORGED-LOG-LINE")
+
+        banner = capsys.readouterr().err
+        assert "LOOPGUARD" in banner
+        assert "\\nFORGED-LOG-LINE" in banner
+        assert "\nFORGED-LOG-LINE" not in banner
+
+
+class TestMonitoringNeverFailsTheRequest:
+    """The middleware observes the request; it must never break it."""
+
+    async def test_a_raising_poll_does_not_leak_the_context(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unregister always runs, even if the measurement blows up.
+
+        The finally poll runs before unregister_request, so an exception
+        escaping it would leak the context forever: every later blocking
+        event would then attribute to a request that finished long ago.
+        """
+
+        def boom(self: SentinelMonitor) -> None:
+            raise RuntimeError("measurement failed")
+
+        monkeypatch.setattr(SentinelMonitor, "poll", boom)
+
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(enforcement_mode="warn"),
+        )
+
+        @app.get("/ping")
+        async def ping() -> dict[str, bool]:
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/ping")
+
+        assert response.status_code == 200
+        assert get_registry().active_count() == 0
+
+    async def test_a_raising_request_metric_does_not_leak_the_context(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Same guarantee for the Prometheus counter on the response path."""
+
+        def boom(self: SentinelMonitor, route: str, method: str) -> None:
+            raise RuntimeError("metric failed")
+
+        monkeypatch.setattr(SentinelMonitor, "record_request", boom)
+
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(enforcement_mode="warn"),
+        )
+
+        @app.get("/ping")
+        async def ping() -> dict[str, bool]:
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/ping")
+
+        assert response.status_code == 200
+        assert get_registry().active_count() == 0
+
+
+class TestLogModeUsesTheFinallyPoll:
+    """Plain "log" mode has no send wrapper, so only the finally poll runs."""
+
+    async def test_log_mode_still_reports_a_block_without_a_trailing_await(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The event is logged and attributed to the in-flight request."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="log",
+                dev_mode=False,
+                fallback_threshold_ms=20.0,
+            ),
+        )
+
+        @app.get("/blocking")
+        async def blocking() -> dict[str, bool]:
+            time.sleep(0.2)
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        with caplog.at_level(logging.WARNING, logger="fastapi_loopguard"):
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                response = await client.get("/blocking")
+
+        assert response.status_code == 200
+        assert "x-blocking-detected" not in response.headers
+        assert "in-flight request(s)" in caplog.text
+
+    async def test_log_mode_with_dev_headers_reports_in_headers(self) -> None:
+        """dev_mode adds the diagnostic headers without changing the status."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="log",
+                dev_mode=True,
+                fallback_threshold_ms=20.0,
+            ),
+        )
+
+        @app.get("/blocking")
+        async def blocking() -> dict[str, bool]:
+            time.sleep(0.2)
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/blocking")
+
+        assert response.status_code == 200
+        assert response.headers["x-blocking-detected"] == "true"
+
+
+class TestBystanderAttributionThroughPoll:
+    """Invariant 2 still holds on the response path."""
+
+    async def test_a_concurrent_clean_request_is_also_flagged(self) -> None:
+        """Blocking attributes to every request in flight, poll included."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="warn",
+                fallback_threshold_ms=20.0,
+            ),
+        )
+
+        @app.get("/blocking")
+        async def blocking() -> dict[str, bool]:
+            time.sleep(0.2)  # no trailing await
+            return {"ok": True}
+
+        @app.get("/bystander")
+        async def bystander() -> dict[str, bool]:
+            await asyncio.sleep(0.15)
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            bystander_task = asyncio.create_task(client.get("/bystander"))
+            await asyncio.sleep(0.01)
+            blocked = await client.get("/blocking")
+            innocent = await bystander_task
+
+        assert blocked.headers["x-blocking-detected"] == "true"
+        assert innocent.headers["x-blocking-detected"] == "true"

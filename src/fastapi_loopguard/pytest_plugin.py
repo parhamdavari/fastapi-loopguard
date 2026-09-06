@@ -28,10 +28,17 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+logger = logging.getLogger("fastapi_loopguard")
+
+# How long stop() waits for the monitor to record its pending sample. The
+# monitor's own interval is 5ms, so this is slack, not a budget.
+_DRAIN_TIMEOUT_SEC = 0.1
 
 # Marker for tests that should fail on blocking
 MARKER_NAME = "no_blocking"
@@ -127,18 +134,38 @@ class BlockingDetector:
 
         Runs inside test finally blocks, so it must not swallow a
         cancellation aimed at the test itself (e.g. a timeout plugin).
+
+        Adds up to one monitor interval (5ms) per instrumented test, which
+        is visible as wall clock on a large suite under loopguard_all_async.
+
+        Drains the monitor instead of cancelling it: a test that blocks and
+        then returns without awaiting leaves the monitor holding an expired
+        sleep and an unrecorded lag. Cancelling straight away discards that
+        sample and scores the test clean, which is the common shape of
+        blocking test code. Clearing _running first makes the monitor exit
+        after one more iteration, so this waits at most one interval.
         """
         self._running = False
         task = self._task
         self._task = None
         if task:
-            task.cancel()
             try:
-                await task
+                # Bounded: _running is already False, so the monitor exits
+                # after at most one interval. The timeout is only there so a
+                # wedged loop cannot hang every test's teardown.
+                await asyncio.wait_for(task, timeout=_DRAIN_TIMEOUT_SEC)
             except asyncio.CancelledError:
                 current = asyncio.current_task()
                 if current is not None and current.cancelling():
                     raise
+            except Exception:
+                # This runs in the finally of every instrumented test. An
+                # exception from the monitor must not replace the test's own
+                # failure with a confusing one.
+                logger.warning("LoopGuard blocking detector failed", exc_info=True)
+            finally:
+                if not task.done():
+                    task.cancel()
 
     async def _monitor(self) -> None:
         """Monitor for blocking."""

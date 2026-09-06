@@ -54,13 +54,18 @@ hardening pass) but deliberately left alone. Each item is its own future task.
 
 ## Dead / inert code and docs drift
 
-9. **`prometheus_enabled` is inert** (known gap #1): nothing on the detection
-   path imports `metrics.py`. Out of scope here (`metrics.py` untouchable).
+9. ~~**`prometheus_enabled` is inert**~~ — fixed. `monitor.__init__` imports
+   `metrics.py` lazily when the flag is set, and records blocking events,
+   monitored requests and the current threshold.
 
-10. **`_generate_warning_banner()` is dead code** (known gap #4).
+10. ~~**`_generate_warning_banner()` is dead code**~~ — removed. It was also
+    an unescaped-HTML template, so leaving it in the file was an invitation to
+    wire up an XSS hole later.
 
-11. **`docs/CONFIGURATION.md` names metrics that do not exist** (known gap #2)
-    and `get_metrics()` can never find an instance (known gap #3).
+11. ~~**`docs/CONFIGURATION.md` names metrics that do not exist** and
+    `get_metrics()` can never find an instance~~ — both fixed. The docs list
+    the four real metrics with their labels, and `get_metrics()` takes the
+    registry so it derives the same key `create_metrics()` wrote.
 
 12. ~~**`docs/CONFIGURATION.md` describes `fallback_threshold_ms` as "Used if
     calibration is unreliable"**~~ — fixed in the 0.6 pass; the docs now

@@ -166,6 +166,35 @@ class TestPytestPluginIntegration:
         result.assert_outcomes(failed=1)
         assert "Event loop blocking detected" in result.stdout.str()
 
+    def test_no_blocking_marker_fails_block_without_trailing_await(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """A test that blocks and returns with no trailing await still fails.
+
+        This is the common shape of blocking test code. The monitor's pending
+        sleep expires during the block but never resumes, so a stop() that
+        cancels instead of draining discards the sample and scores it clean.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import time
+
+            @pytest.mark.no_blocking
+            async def test_blocks_then_returns():
+                # No await anywhere: the monitor gets no turn of its own
+                time.sleep(0.2)
+        """)
+
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+        assert "Event loop blocking detected" in result.stdout.str()
+
     def test_no_blocking_marker_passes_clean_test(
         self, pytester: pytest.Pytester
     ) -> None:

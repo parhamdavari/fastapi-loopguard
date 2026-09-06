@@ -7,15 +7,33 @@ import pytest
 # Skip all tests if prometheus_client is not installed
 prometheus_client = pytest.importorskip("prometheus_client")
 
+import asyncio  # noqa: E402
+import logging  # noqa: E402
+import time  # noqa: E402
+from typing import TYPE_CHECKING  # noqa: E402
+
+from fastapi import FastAPI  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
 from prometheus_client import CollectorRegistry  # noqa: E402
 
+from fastapi_loopguard import (  # noqa: E402
+    LoopGuardConfig,
+    LoopGuardMiddleware,
+    SentinelMonitor,
+)
+from fastapi_loopguard.context import get_registry  # noqa: E402
 from fastapi_loopguard.metrics import (  # noqa: E402
+    MAX_LABEL_PAIRS,
+    OVERFLOW_LABEL,
     LoopGuardMetrics,
     create_metrics,
     get_metrics,
     init_metrics,
     reset_metrics,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 class TestLoopGuardMetrics:
@@ -62,13 +80,12 @@ class TestLoopGuardMetrics:
         """Test record_blocking increments the blocking counter."""
         metrics = LoopGuardMetrics(prefix="test", registry=registry)
 
-        metrics.record_blocking(0.1, path="/api/users", method="GET")
-        metrics.record_blocking(0.2, path="/api/users", method="GET")
+        metrics.record_blocking(0.1)
+        metrics.record_blocking(0.2)
 
-        # Get counter value
         counter_value = registry.get_sample_value(
             "test_blocking_total",
-            {"path": "/api/users", "method": "GET"},
+            {"event_type": "single"},
         )
         assert counter_value == 2
 
@@ -78,28 +95,33 @@ class TestLoopGuardMetrics:
         """Test record_blocking observes the lag histogram."""
         metrics = LoopGuardMetrics(prefix="test", registry=registry)
 
-        metrics.record_blocking(0.05, path="/test", method="POST")
+        metrics.record_blocking(0.05)
 
-        # Check histogram count
         histogram_count = registry.get_sample_value(
             "test_lag_seconds_count",
-            {"path": "/test", "method": "POST"},
+            {"event_type": "single"},
         )
         assert histogram_count == 1
 
-    def test_record_blocking_with_unknown_labels(
+    def test_cumulative_events_are_a_separate_series(
         self, registry: CollectorRegistry
     ) -> None:
-        """Test record_blocking handles None path/method."""
+        """A window sum is a different quantity from one stall's duration."""
         metrics = LoopGuardMetrics(prefix="test", registry=registry)
 
-        metrics.record_blocking(0.1)  # No path or method
+        metrics.record_blocking(0.05)
+        metrics.record_blocking(0.4, "cumulative")
 
-        counter_value = registry.get_sample_value(
-            "test_blocking_total",
-            {"path": "unknown", "method": "unknown"},
+        assert (
+            registry.get_sample_value("test_blocking_total", {"event_type": "single"})
+            == 1
         )
-        assert counter_value == 1
+        assert (
+            registry.get_sample_value(
+                "test_blocking_total", {"event_type": "cumulative"}
+            )
+            == 1
+        )
 
     def test_record_request_increments_counter(
         self, registry: CollectorRegistry
@@ -107,20 +129,57 @@ class TestLoopGuardMetrics:
         """Test record_request increments the requests counter."""
         metrics = LoopGuardMetrics(prefix="test", registry=registry)
 
-        metrics.record_request(path="/api/items", method="GET")
-        metrics.record_request(path="/api/items", method="GET")
-        metrics.record_request(path="/api/items", method="POST")
+        metrics.record_request("/api/items", "GET")
+        metrics.record_request("/api/items", "GET")
+        metrics.record_request("/api/items", "POST")
 
         get_count = registry.get_sample_value(
             "test_requests_monitored_total",
-            {"path": "/api/items", "method": "GET"},
+            {"route": "/api/items", "method": "GET"},
         )
         post_count = registry.get_sample_value(
             "test_requests_monitored_total",
-            {"path": "/api/items", "method": "POST"},
+            {"route": "/api/items", "method": "POST"},
         )
         assert get_count == 2
         assert post_count == 1
+
+    def test_label_pairs_are_capped(self, registry: CollectorRegistry) -> None:
+        """Distinct label values cannot grow without bound."""
+        metrics = LoopGuardMetrics(prefix="test", registry=registry)
+
+        for i in range(MAX_LABEL_PAIRS + 500):
+            metrics.record_request(f"/route/{i}", "GET")
+
+        series = {
+            sample.labels["route"]
+            for metric in registry.collect()
+            for sample in metric.samples
+            if sample.name == "test_requests_monitored_total"
+        }
+        assert len(series) == MAX_LABEL_PAIRS + 1  # the cap plus the overflow bucket
+        assert OVERFLOW_LABEL in series
+        assert (
+            registry.get_sample_value(
+                "test_requests_monitored_total",
+                {"route": OVERFLOW_LABEL, "method": OVERFLOW_LABEL},
+            )
+            == 500
+        )
+
+    def test_nonstandard_method_collapses(self, registry: CollectorRegistry) -> None:
+        """An arbitrary HTTP verb cannot mint its own series."""
+        metrics = LoopGuardMetrics(prefix="test", registry=registry)
+
+        metrics.record_request("/x", "AAAAAAAA")
+
+        assert (
+            registry.get_sample_value(
+                "test_requests_monitored_total",
+                {"route": "/x", "method": OVERFLOW_LABEL},
+            )
+            == 1
+        )
 
     def test_set_threshold_updates_gauge(self, registry: CollectorRegistry) -> None:
         """Test set_threshold updates the threshold gauge."""
@@ -183,14 +242,24 @@ class TestMetricsFactoryFunctions:
         assert metrics1 is not metrics2
 
     def test_get_metrics_returns_existing(self, registry: CollectorRegistry) -> None:
-        """Test get_metrics returns existing instance."""
+        """get_metrics finds an instance when given the same registry."""
+        created = create_metrics(prefix="findme", registry=registry)
+
+        assert get_metrics("findme", registry) is created
+
+    def test_get_metrics_misses_on_a_different_registry(
+        self, registry: CollectorRegistry
+    ) -> None:
+        """The registry is part of the identity, so the default misses."""
         create_metrics(prefix="findme", registry=registry)
-        # Note: get_metrics uses just prefix, but cache key includes registry id
-        # So it won't find it with default get_metrics(prefix)
-        # This tests the intended behavior
-        found = get_metrics("findme")
-        # Will be None because key is "findme:{registry_id}"
-        assert found is None
+
+        assert get_metrics("findme") is None
+
+    def test_get_metrics_finds_the_default_registry_instance(self) -> None:
+        """The common case: created and looked up with no registry."""
+        created = create_metrics(prefix="defaultreg")
+
+        assert get_metrics("defaultreg") is created
 
     def test_get_metrics_returns_none_when_not_found(self) -> None:
         """Test get_metrics returns None for non-existent prefix."""
@@ -244,3 +313,174 @@ class TestMetricsWithoutPrometheus:
             LoopGuardMetrics()
 
         assert "prometheus_client is not installed" in str(exc_info.value)
+
+
+class TestPrometheusEnabledIsWired:
+    """`prometheus_enabled=True` must actually export samples.
+
+    The flag existed for several releases while nothing on the detection path
+    imported this module, so enabling it exposed nothing at all.
+    """
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> Generator[None, None, None]:
+        """Clear the request registry before and after each test."""
+        get_registry().clear()
+        yield
+        get_registry().clear()
+
+    @pytest.fixture
+    def isolated_metrics(self, monkeypatch: pytest.MonkeyPatch) -> LoopGuardMetrics:
+        """Bind the monitor's metrics to a private registry.
+
+        The monitor calls create_metrics() with no arguments, which would land
+        on the process-wide default registry and collide across tests.
+        """
+        registry = CollectorRegistry()
+        metrics = LoopGuardMetrics(prefix="wiretest", registry=registry)
+        monkeypatch.setattr(
+            "fastapi_loopguard.metrics.create_metrics",
+            lambda *args, **kwargs: metrics,
+        )
+        return metrics
+
+    def _sample(self, metrics: LoopGuardMetrics, name: str) -> float:
+        total = 0.0
+        for metric in metrics._registry.collect():
+            for sample in metric.samples:
+                if sample.name == name:
+                    total += sample.value
+        return total
+
+    async def test_blocking_is_exported(
+        self, isolated_metrics: LoopGuardMetrics
+    ) -> None:
+        """A detected stall increments the blocking counter."""
+        monitor = SentinelMonitor(
+            LoopGuardConfig(
+                prometheus_enabled=True,
+                monitor_interval_ms=5.0,
+                fallback_threshold_ms=20.0,
+                cumulative_blocking_enabled=False,
+            )
+        )
+        await monitor.start_with_background_calibration()
+        try:
+            await asyncio.sleep(0.02)
+            time.sleep(0.15)
+            monitor.poll()
+        finally:
+            await monitor.stop()
+
+        assert self._sample(isolated_metrics, "wiretest_blocking_total") == 1.0
+
+    async def test_requests_are_exported(
+        self, isolated_metrics: LoopGuardMetrics
+    ) -> None:
+        """Every monitored request increments the request counter."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(prometheus_enabled=True),
+        )
+
+        @app.get("/ping")
+        async def ping() -> dict[str, bool]:
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.get("/ping")
+            await client.get("/ping")
+
+        assert (
+            self._sample(isolated_metrics, "wiretest_requests_monitored_total") == 2.0
+        )
+
+    async def test_unmatched_paths_do_not_mint_series(
+        self, isolated_metrics: LoopGuardMetrics
+    ) -> None:
+        """A 404 flood must not grow the metric store.
+
+        The raw request path is client-controlled and unbounded, so using it
+        as a label is remote memory exhaustion: every distinct URL mints a
+        child metric that is never evicted.
+        """
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(prometheus_enabled=True),
+        )
+
+        @app.get("/ping")
+        async def ping() -> dict[str, bool]:
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for i in range(300):
+                await client.get(f"/nope/{i}")
+
+        routes = {
+            sample.labels["route"]
+            for metric in isolated_metrics._registry.collect()
+            for sample in metric.samples
+            if sample.name == "wiretest_requests_monitored_total"
+        }
+        assert routes == {"unmatched"}
+
+    async def test_path_parameters_collapse_to_the_route_template(
+        self, isolated_metrics: LoopGuardMetrics
+    ) -> None:
+        """Ordinary traffic to /users/{id} is one series, not one per id."""
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(prometheus_enabled=True),
+        )
+
+        @app.get("/users/{user_id}")
+        async def user(user_id: str) -> dict[str, bool]:
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for i in range(50):
+                await client.get(f"/users/{i}")
+
+        assert (
+            self._sample(isolated_metrics, "wiretest_requests_monitored_total") == 50.0
+        )
+        routes = {
+            sample.labels["route"]
+            for metric in isolated_metrics._registry.collect()
+            for sample in metric.samples
+            if sample.name == "wiretest_requests_monitored_total"
+        }
+        assert routes == {"/users/{user_id}"}
+
+    def test_threshold_gauge_is_set_at_startup(
+        self, isolated_metrics: LoopGuardMetrics
+    ) -> None:
+        """The gauge reflects the threshold the monitor starts on."""
+        SentinelMonitor(
+            LoopGuardConfig(prometheus_enabled=True, fallback_threshold_ms=42.0)
+        )
+
+        assert self._sample(isolated_metrics, "wiretest_threshold_seconds") == 0.042
+
+    def test_missing_extra_logs_instead_of_raising(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Without prometheus_client the flag is loud, not fatal."""
+
+        def _raise(*args: object, **kwargs: object) -> LoopGuardMetrics:
+            raise RuntimeError("prometheus_client is not installed.")
+
+        monkeypatch.setattr("fastapi_loopguard.metrics.create_metrics", _raise)
+
+        with caplog.at_level(logging.ERROR, logger="fastapi_loopguard"):
+            monitor = SentinelMonitor(LoopGuardConfig(prometheus_enabled=True))
+
+        assert monitor._metrics is None
+        assert "prometheus_client is not installed" in caplog.text

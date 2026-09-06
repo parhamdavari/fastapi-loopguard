@@ -2,7 +2,89 @@
 
 ## Unreleased
 
-No library code changed. The `evals/` benchmark and the claims it backs were
+### Security
+
+- **Reflected XSS in the strict-mode 503 page.** `_generate_error_html`
+  interpolated the request method and path into HTML with no escaping, and
+  ASGI servers percent-decode the path — so a request for
+  `/%3Cscript%3E...%3C/script%3E` with `Accept: text/html` executed attacker
+  JavaScript on the application's own origin. Because blocking attributes to
+  every request in flight, the attacker only had to have a request in flight
+  while any other request stalled the loop. Both values are now escaped, and
+  the never-called `_generate_warning_banner()` — which had the same hole —
+  is deleted. Present since strict mode shipped; the JSON error body was
+  never affected.
+- **Unbounded Prometheus label cardinality.** With `prometheus_enabled=True`,
+  metrics were labelled by the raw request path. Every distinct URL minted a
+  child metric that is never evicted, so unauthenticated traffic to random
+  paths grew process memory without bound — and ordinary traffic to a route
+  with a path parameter did the same on its own. Requests are now labelled by
+  the matched route template, unmatched requests collapse to `unmatched`,
+  non-standard HTTP verbs to `other`, and the label set is capped at 200
+  pairs. This shipped inert (nothing imported `metrics.py`), so no released
+  version was exploitable.
+- **Log injection through the console banner.** The blocking banner printed
+  the decoded request path to stderr raw, so `%0A` forged lines in any log
+  aggregator reading it. Control characters are now escaped.
+- `docs/CONFIGURATION.md` now says plainly that strict mode must not run in
+  production, and that the diagnostic headers tell any unauthenticated client
+  which endpoints stall the loop.
+
+### Fixed
+
+- **Blocking that ended without an `await` went unreported.** The sentinel
+  measures a tick by resuming from its own sleep, so a handler — or a test —
+  that blocked and then returned without awaiting left that sleep expired and
+  never measured: strict mode returned 200, warn mode reported
+  `x-blocking-detected: false`, and the pytest harness scored the test clean.
+  This is the ordinary shape of blocking code, so the miss was the common
+  case, not an edge case. `SentinelMonitor.poll()` now takes a synchronous
+  measurement on the response path, and `BlockingDetector.stop()` drains its
+  monitor instead of cancelling it. The monitor loop then reports only the
+  residual of a polled tick, so a stall spanning a response is reported in
+  full and no millisecond is counted twice.
+- **A cancelled or recovering monitor invented blocking.** `poll()` measured
+  against the tick marker even when the monitor task had been cancelled or
+  was inside its error-recovery sleep, reporting a stall that grew with
+  wall-clock time — a 503, in strict mode, for a request that did nothing
+  wrong. Those paths now clear the marker, and `poll()` refuses to measure a
+  tick no live task owns.
+- **The middleware could fail a request it was only observing.** The response
+  path measurement and the request counter both ran unguarded, and the
+  measurement runs before `unregister_request` — so an exception leaked the
+  request context permanently, after which every later blocking event
+  attributed to a request that had long finished. Both now swallow and log.
+- **A Prometheus registration failure took the app down.** Only the
+  missing-package case was caught, so a duplicate registration on the
+  process-wide registry failed startup, or the first request on apps without
+  lifespan. Any setup failure now disables metrics and logs.
+- `BlockingDetector.stop()` bounds its drain and no longer lets a monitor
+  exception replace a test's own failure.
+- **`prometheus_enabled` now exposes metrics.** Nothing on the detection path
+  imported `metrics.py`, so the flag did nothing at all. The monitor records
+  `loopguard_blocking_total`, `loopguard_lag_seconds`,
+  `loopguard_requests_monitored_total` and `loopguard_threshold_seconds`.
+  Blocking metrics carry an `event_type` label (`single` / `cumulative`) and
+  no route label: the sentinel measures loop lag, not call stacks, so it
+  cannot say which endpoint blocked, and one event is one increment rather
+  than one per in-flight request.
+  Without the `prometheus` extra installed the flag logs an error once and
+  stays off rather than failing the app.
+- **`get_metrics()` could never find an instance.** It looked up the bare
+  prefix while `create_metrics()` stored `prefix` plus registry identity. It
+  now takes the registry and derives the same key.
+- `docs/CONFIGURATION.md` listed two metric names that do not exist. It now
+  documents the four real ones, their labels, and how to serve them.
+
+### Changed
+
+- **The minimum Python is now 3.11**, down from 3.12. Nothing in the library
+  needed 3.12; the real floor is `asyncio.Task.cancelling()`, which landed in
+  3.11. CI runs 3.11, 3.12 and 3.13.
+
+---
+
+The `evals/` benchmark and the claims it backs were
 corrected; `README.md` and `docs/AI-HARNESS.md` now quote the new figures.
 
 - The scorer no longer reports an unmeasured sample as non-blocking. A
