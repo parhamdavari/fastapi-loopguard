@@ -96,9 +96,34 @@ The adaptive threshold is clamped to `[calibrated threshold, fallback_threshold_
 |--------|------|---------|-------------|
 | `prometheus_enabled` | bool | `False` | Expose Prometheus metrics |
 
-When enabled, exposes:
-- `loopguard_blocking_events_total` - Counter of blocking events
-- `loopguard_blocking_duration_ms` - Histogram of blocking durations
+Requires the extra: `pip install fastapi-loopguard[prometheus]`. Without it the
+flag logs an error once and metrics stay off; the app still starts.
+
+When enabled, registers on the default `prometheus_client` registry:
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `loopguard_blocking_total` | Counter | `event_type` | Blocking events, one increment per event |
+| `loopguard_lag_seconds` | Histogram | `event_type` | Measured loop lag |
+| `loopguard_requests_monitored_total` | Counter | `route`, `method` | Requests completed through the middleware |
+| `loopguard_threshold_seconds` | Gauge | — | Current detection threshold |
+
+`event_type` is `single` for one over-threshold sample and `cumulative` for a
+saturated window. They are different quantities — a window sum is not a stall
+duration — so keep them apart when you compute percentiles.
+
+**Blocking carries no route label, by design.** The sentinel measures loop lag,
+not call stacks, so it cannot say which endpoint blocked. A route label there
+would read as an accusation the data does not support.
+
+`route` is the matched route template (`/users/{user_id}`), never the raw
+request path. The raw path is client-controlled and unbounded, so using it as
+a label would let anyone grow your process's memory by requesting random URLs;
+unmatched requests collapse to `unmatched`, non-standard HTTP verbs to `other`,
+and the whole label set is capped at 200 distinct pairs as a backstop.
+
+Serve the metrics yourself, for example with `prometheus_client.make_asgi_app()`
+mounted on your app.
 
 ---
 
@@ -113,6 +138,20 @@ config = LoopGuardConfig(dev_mode=True)
 ```python
 config = LoopGuardConfig(enforcement_mode="strict")
 ```
+
+**Do not run strict mode in production.** Blocking is attributed to every
+request in flight during the stall, so one slow handler turns into 503s for
+unrelated users. The 503 page is a debugging aid, not an error page for real
+traffic.
+
+### A note on the diagnostic headers
+
+`x-blocking-count` and `x-blocking-total-ms` go to every client, including in
+the default `warn` mode. They tell an unauthenticated caller exactly which of
+your endpoints stall the loop and by how long, which is the reconnaissance
+step for a cheap availability attack on an async app. If your service is
+public and you only want the logs, use `enforcement_mode="log"` with
+`dev_mode=False`, which sends no diagnostic headers at all.
 
 ### Production (silent monitoring)
 ```python

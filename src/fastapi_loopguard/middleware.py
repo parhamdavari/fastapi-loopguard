@@ -7,7 +7,9 @@ with BaseHTTPMiddleware (deprecated, breaks contextvars, memory leaks).
 from __future__ import annotations
 
 import asyncio
+import html
 import json
+import logging
 import os
 import sys
 import uuid
@@ -22,6 +24,9 @@ from .context import (
     unregister_request,
 )
 from .monitor import SentinelMonitor
+
+# Shared with monitor.py and logging.py
+logger = logging.getLogger("fastapi_loopguard")
 
 if TYPE_CHECKING:
     from .config import LoopGuardConfig
@@ -48,6 +53,35 @@ def _console_supports_color() -> bool:
     return is_tty and not os.environ.get("NO_COLOR")
 
 
+def _route_label(scope: Scope) -> str:
+    """The metric label for a request: a route template, never the raw path.
+
+    scope["path"] is client-controlled and unbounded, so using it as a metric
+    label lets anyone grow the process's memory by requesting random URLs.
+    FastAPI puts the matched route on scope["route"] and Starlette puts the
+    handler on scope["endpoint"]; both are bounded by the app's route table.
+    Read by duck typing so this stays a pure-ASGI module.
+    """
+    route_path = getattr(scope.get("route"), "path", None)
+    if isinstance(route_path, str) and route_path:
+        return route_path
+    endpoint = scope.get("endpoint")
+    name = getattr(endpoint, "__name__", None)
+    if isinstance(name, str) and name:
+        return name
+    return "unmatched"
+
+
+def _safe_for_console(value: str) -> str:
+    """Escape control characters before printing a client-controlled value.
+
+    ASGI servers percent-decode the request path, so a request for %0A puts a
+    real newline in ctx.path. Printed raw, it forges lines in stderr and in
+    any log aggregator reading it.
+    """
+    return value.encode("unicode_escape").decode("ascii")
+
+
 def _format_console_warning(ctx: RequestContext, use_color: bool) -> str:
     """Render the blocking banner, with or without ANSI color.
 
@@ -65,7 +99,8 @@ def _format_console_warning(ctx: RequestContext, use_color: bool) -> str:
         "",
         paint(_BOLD_RED, top_rule),
         "",
-        f"  In-flight request: {ctx.method} {ctx.path}",
+        f"  In-flight request: {_safe_for_console(ctx.method)} "
+        f"{_safe_for_console(ctx.path)}",
         f"  Request ID: {ctx.request_id}",
         f"  Blocked: {ctx.blocking_count} time(s), {ctx.total_blocking_ms:.1f}ms total",
         "",
@@ -290,6 +325,14 @@ class LoopGuardMiddleware:
                 # "log" mode without headers
                 await self.app(scope, receive, send)
         finally:
+            # Catch-all for the paths with no send wrapper ("log" mode) and
+            # for blocking after the headers went out: measure while this
+            # context is still registered, or the event is attributed to no
+            # request at all
+            self._poll_monitor()
+            # Counted here, not before dispatch: the matched route is only on
+            # the scope once routing has run
+            self._record_request(_route_label(scope), method)
             unregister_request(request_id)
             # A lazily started monitor has no lifespan shutdown to stop it:
             # stop when the last in-flight request finishes, restart on the
@@ -320,6 +363,7 @@ class LoopGuardMiddleware:
 
             if message["type"] == "http.response.start" and not response_started:
                 response_started = True
+                self._poll_monitor()
 
                 # Get existing headers and add our debug headers
                 headers = list(message.get("headers", []))
@@ -345,6 +389,35 @@ class LoopGuardMiddleware:
 
         await self.app(scope, receive, send_wrapper)
 
+    def _poll_monitor(self) -> None:
+        """Force a blocking measurement from the response path.
+
+        Without this, a handler that blocks and then returns without awaiting
+        leaves the monitor's expired sleep unmeasured, and the response
+        reports zero blocking for a stall that really happened. Called once
+        at http.response.start and once in the _handle_http finally, so the
+        second call runs after the headers are already on the wire.
+
+        Never raises: this runs inside the caller's request, and the finally
+        call runs before unregister_request, so an escaping exception would
+        leak the context and break the unregister-always invariant.
+        """
+        if self._monitor is None:
+            return
+        try:
+            self._monitor.poll()
+        except Exception:
+            logger.exception("LoopGuard poll failed")
+
+    def _record_request(self, route: str, method: str) -> None:
+        """Count the request in Prometheus. Never raises, same reason."""
+        if self._monitor is None:
+            return
+        try:
+            self._monitor.record_request(route, method)
+        except Exception:
+            logger.exception("LoopGuard request metric failed")
+
     def _get_effective_enforcement_mode(self) -> str:
         """Get the effective enforcement mode.
 
@@ -369,7 +442,15 @@ class LoopGuardMiddleware:
         )
 
     def _generate_error_html(self, ctx: RequestContext) -> str:
-        """Generate educational HTML error page for strict mode."""
+        """Generate educational HTML error page for strict mode.
+
+        Method and path come from the request line, so they are entirely
+        client-controlled and must be escaped: ASGI servers percent-decode
+        the path, and an unescaped one is reflected XSS on the app's own
+        origin. The JSON branch is safe because json.dumps escapes for it.
+        """
+        safe_method = html.escape(ctx.method)
+        safe_path = html.escape(ctx.path)
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -446,7 +527,7 @@ class LoopGuardMiddleware:
             <h1>Event Loop Blocked!</h1>
             <p>
                 <strong>In-flight request:</strong>
-                <code>{ctx.method} {ctx.path}</code><br>
+                <code>{safe_method} {safe_path}</code><br>
                 <strong>Blocked:</strong> {ctx.blocking_count} time(s),
                 totaling <code>{ctx.total_blocking_ms:.1f}ms</code>
             </p>
@@ -508,7 +589,7 @@ await proc.wait()</pre>
         </p>
 
         <div class="footer">
-            Request ID: {ctx.request_id} &bull;
+            Request ID: {html.escape(ctx.request_id)} &bull;
             Detected by <a href="https://github.com/parhamdavari/fastapi-loopguard">LoopGuard</a>
         </div>
     </div>
@@ -546,29 +627,6 @@ await proc.wait()</pre>
             },
             indent=2,
         )
-
-    def _generate_warning_banner(self, ctx: RequestContext) -> str:
-        """Generate HTML warning banner for injection into responses."""
-        return f"""
-<div id="loopguard-warning" style="
-    position: fixed; top: 0; left: 0; right: 0; z-index: 99999;
-    background: linear-gradient(90deg, #dc2626, #f87171);
-    color: white; padding: 12px 20px; font-family: system-ui, sans-serif;
-    font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    display: flex; align-items: center; justify-content: space-between;
-">
-    <span>
-        <strong>LoopGuard:</strong> Event loop blocked {ctx.blocking_count}x
-        ({ctx.total_blocking_ms:.1f}ms) during {ctx.method} {ctx.path}
-        <a href="https://fastapi.tiangolo.com/async/"
-           style="color: white; margin-left: 8px;">Learn about async</a>
-    </span>
-    <button onclick="this.parentElement.remove()" style="
-        background: none; border: none; color: white;
-        cursor: pointer; font-size: 20px; padding: 0 8px;
-    ">&times;</button>
-</div>
-"""
 
     async def _send_strict_error(
         self,
@@ -626,6 +684,7 @@ await proc.wait()</pre>
 
             if message["type"] == "http.response.start" and not response_started:
                 response_started = True
+                self._poll_monitor()
 
                 # Add warning headers
                 headers = list(message.get("headers", []))
@@ -674,6 +733,7 @@ await proc.wait()</pre>
 
             if message["type"] == "http.response.start" and not response_started:
                 response_started = True
+                self._poll_monitor()
 
                 # Check if blocking was detected
                 if ctx.blocking_count > 0:
