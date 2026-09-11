@@ -23,6 +23,7 @@ from .context import (
     register_request,
     unregister_request,
 )
+from .hints import FIX_HINTS, hint_lines
 from .monitor import SentinelMonitor
 
 # Shared with monitor.py and logging.py
@@ -82,6 +83,27 @@ def _safe_for_console(value: str) -> str:
     return value.encode("unicode_escape").decode("ascii")
 
 
+def _console_fixes() -> str:
+    """The banner's fix list, two lines per hint.
+
+    Two lines rather than one aligned column: the httpx and subprocess
+    rewrites are long enough that aligning them would wrap mid-expression
+    inside the banner.
+    """
+    return "\n".join(
+        f"    {before}\n      -> {after}" for _, before, after in FIX_HINTS
+    )
+
+
+def _fix_examples_html(*, fixed: bool) -> str:
+    """One column of the error page's before/after table, from FIX_HINTS."""
+    return "\n\n".join(
+        f'<span class="comment"># {html.escape(label)}</span>\n'
+        f"{html.escape(after if fixed else before)}"
+        for label, before, after in FIX_HINTS
+    )
+
+
 def _format_console_warning(ctx: RequestContext, use_color: bool) -> str:
     """Render the blocking banner, with or without ANSI color.
 
@@ -113,13 +135,7 @@ def _format_console_warning(ctx: RequestContext, use_color: bool) -> str:
         ),
         "",
         "  Common fixes:",
-        paint(
-            _CYAN,
-            "    time.sleep(n)       -> await asyncio.sleep(n)\n"
-            "    requests.get(url)   -> await httpx.AsyncClient().get(url)\n"
-            "    open(f).read()      -> await aiofiles.open(f)\n"
-            "    subprocess.run(...) -> await asyncio.create_subprocess_exec(...)",
-        ),
+        paint(_CYAN, _console_fixes()),
         "",
         "  Docs: https://fastapi.tiangolo.com/async/",
         paint(_BOLD_RED, "─" * _BANNER_WIDTH),
@@ -451,6 +467,8 @@ class LoopGuardMiddleware:
         """
         safe_method = html.escape(ctx.method)
         safe_path = html.escape(ctx.path)
+        blocking_examples = _fix_examples_html(fixed=False)
+        async_examples = _fix_examples_html(fixed=True)
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -545,40 +563,19 @@ class LoopGuardMiddleware:
 
         <div class="bad-label">BAD - These block the event loop:</div>
         <pre class="code-block bad">
-<span class="comment"># Sleeping</span>
-time.sleep(1)
-
-<span class="comment"># HTTP requests</span>
-requests.get("https://api.example.com")
-
-<span class="comment"># File I/O</span>
-open("data.json").read()
-
-<span class="comment"># Subprocess</span>
-subprocess.run(["ls", "-la"])</pre>
+{blocking_examples}</pre>
 
         <div class="good-label">GOOD - Use async alternatives:</div>
         <pre class="code-block good">
-<span class="comment"># Sleeping</span>
-await asyncio.sleep(1)
-
-<span class="comment"># HTTP requests</span>
-async with httpx.AsyncClient() as client:
-    await client.get("https://api.example.com")
-
-<span class="comment"># File I/O</span>
-async with aiofiles.open("data.json") as f:
-    await f.read()
-
-<span class="comment"># Subprocess</span>
-proc = await asyncio.create_subprocess_exec("ls", "-la")
-await proc.wait()</pre>
+{async_examples}</pre>
 
         <h2>Quick Fixes</h2>
         <ul>
-            <li>Use <code>asyncio.to_thread(func)</code> for CPU-bound work</li>
-            <li>Replace <code>requests</code> with <code>httpx</code></li>
-            <li>Replace <code>open()</code> with <code>aiofiles</code></li>
+            <li>Wrap blocking calls you cannot replace in
+                <code>await asyncio.to_thread(func, *args)</code></li>
+            <li>Replace <code>requests</code> with an
+                <code>httpx.AsyncClient</code>, opened as a context manager
+                so it is closed</li>
             <li>Use async database drivers (asyncpg, aiomysql, motor)</li>
         </ul>
 
@@ -615,13 +612,7 @@ await proc.wait()</pre>
                 },
                 "help": {
                     "problem": "Synchronous code blocked the async event loop",
-                    "common_causes": [
-                        "time.sleep() -> await asyncio.sleep()",
-                        "requests.get() -> await httpx.AsyncClient().get()",
-                        "open().read() -> await aiofiles.open()",
-                        "subprocess.run() -> asyncio.create_subprocess_exec()",
-                        "CPU-bound work -> asyncio.to_thread(func)",
-                    ],
+                    "common_causes": hint_lines(),
                     "docs": "https://fastapi.tiangolo.com/async/",
                 },
             },

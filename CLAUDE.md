@@ -44,6 +44,7 @@ CI lints and type-checks `src/` and `tests/` only — `examples/` is unchecked a
 src/fastapi_loopguard/
   config.py         LoopGuardConfig — frozen slotted dataclass + __post_init__ validation
   context.py        RequestContext, RequestRegistry, module-global _registry, free functions
+  hints.py          FIX_HINTS — the one definition of the suggested rewrites
   monitor.py        SentinelMonitor sleep-measure loop, AdaptiveThreshold
   middleware.py     pure-ASGI LoopGuardMiddleware, enforcement modes, HTML/JSON error pages
   logging.py        StructuredFormatter (JSON), configure_logging, log_blocking_event
@@ -52,7 +53,7 @@ src/fastapi_loopguard/
   cli.py            `loopguard` console script — `loopguard report PATH`, exit 0/1/2
 ```
 
-**Layering (strict — a module imports only lower layers):** `config`, `context` → `monitor` → `middleware`. `logging`, `pytest_plugin`, and `cli` are leaves; nothing on the detection path imports them, and they must not import `middleware`. `metrics` is the one exception: `monitor.__init__` imports it lazily, and only when `prometheus_enabled` is set, so `prometheus_client` stays off the import path of every app that does not ask for it.
+**Layering (strict — a module imports only lower layers):** `config`, `context` → `monitor` → `middleware`. `hints` sits below all of them: it imports nothing, so `middleware` (detection path) and `pytest_plugin` (leaf) can both read it. Every surface that suggests a rewrite — console banner, strict-mode 503 HTML and JSON, the plugin's `hints` array — renders `FIX_HINTS`; `README.md` quotes it and is synced by hand. A hint may name only the standard library or a package this project already documents (`httpx`). `logging`, `pytest_plugin`, and `cli` are leaves; nothing on the detection path imports them, and they must not import `middleware`. `metrics` is the one exception: `monitor.__init__` imports it lazily, and only when `prometheus_enabled` is set, so `prometheus_client` stays off the import path of every app that does not ask for it.
 
 `cli.py` is the strictest leaf: it imports **only the standard library**. In particular it must never import `fastapi_loopguard.pytest_plugin`, which imports `pytest` — a dev dependency the console script's users will not have. It consumes the report as data against `docs/loopguard-report.schema.json` rather than importing the writer, and it does not validate against that schema at runtime (that needs `jsonschema`, also dev-only). `tests/test_cli.py` enforces both: an AST check on the import list and a subprocess import with `pytest` absent. `middleware.py` imports `LoopGuardConfig` inside `__init__` with an "avoid circular imports" comment — the cycle no longer exists, but the deferred import is harmless and not worth churning.
 

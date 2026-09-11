@@ -1274,11 +1274,12 @@ class TestConsoleWarningFormat:
         # Invariant 6 wording: never claims to know the culprit
         assert "may be this request or any other concurrent request" in text
         assert "ALL requests were frozen" in text
+        # The list itself lives in fastapi_loopguard.hints and is checked
+        # for content in tests/test_hints.py; here it only has to render.
         for fix in (
-            "time.sleep(n)       -> await asyncio.sleep(n)",
-            "requests.get(url)   -> await httpx.AsyncClient().get(url)",
-            "open(f).read()      -> await aiofiles.open(f)",
-            "subprocess.run(...) -> await asyncio.create_subprocess_exec(...)",
+            "    time.sleep(n)\n      -> await asyncio.sleep(n)",
+            "    subprocess.run(cmd)\n      -> proc = await "
+            "asyncio.create_subprocess_exec(*cmd); await proc.wait()",
         ):
             assert fix in text
         assert "https://fastapi.tiangolo.com/async/" in text
@@ -1330,8 +1331,8 @@ class TestErrorPageCodeBlocks:
         assert '<pre class="code-block bad">' in html
         assert '<pre class="code-block good">' in html
         # Each example sits on its own line inside the <pre>
-        assert "\ntime.sleep(1)\n" in html
-        assert '\nrequests.get("https://api.example.com")\n' in html
-        assert "\nawait asyncio.sleep(1)\n" in html
+        assert "\ntime.sleep(n)\n" in html
+        assert "\nrequests.get(url)\n" in html
+        assert "\nawait asyncio.sleep(n)\n" in html
         # No div-wrapped code blocks remain (divs collapse the newlines)
         assert '<div class="code-block' not in html

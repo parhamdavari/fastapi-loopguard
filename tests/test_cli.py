@@ -308,7 +308,22 @@ class TestMalformed:
         path = tmp_path / "loopguard.json"
         path.write_text("{not json")
         assert main(["report", str(path)]) == EXIT_ERROR
-        assert "invalid JSON" in self._assert_error(capsys)
+        assert self._assert_error(capsys).rstrip("\n") == (
+            f"loopguard: {path}: invalid JSON (Expecting property name "
+            "enclosed in double quotes at line 1 column 2)"
+        )
+
+    def test_invalid_json_message_says_at_once(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """json's own msg can already end in "at"; we must not add another."""
+        path = tmp_path / "loopguard.json"
+        path.write_text('{"a": "\x01"}')
+        assert main(["report", str(path)]) == EXIT_ERROR
+        assert self._assert_error(capsys).rstrip("\n") == (
+            f"loopguard: {path}: invalid JSON "
+            "(Invalid control character at line 1 column 8)"
+        )
 
     def test_empty_file(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
