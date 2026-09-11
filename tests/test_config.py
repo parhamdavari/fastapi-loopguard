@@ -134,6 +134,15 @@ class TestLoopGuardConfig:
         ):
             LoopGuardConfig(adaptive_update_interval_ms=0)
 
+    def test_enforcement_mode_literal_values(self) -> None:
+        """Test enforcement_mode accepts only documented Literal values."""
+        for mode in ("log", "warn", "strict"):
+            config = LoopGuardConfig(enforcement_mode=mode)
+            assert config.enforcement_mode == mode
+
+        with pytest.raises(ValueError, match="enforcement_mode must be one of"):
+            LoopGuardConfig(enforcement_mode="strikt")  # type: ignore[arg-type]
+
 
 class TestCrossFieldValidation:
     """Cross-field rules that keep the detector's clamps coherent."""
