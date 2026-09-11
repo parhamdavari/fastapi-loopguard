@@ -108,6 +108,50 @@ reverse proxy.
 
 ---
 
+## Log output and JSON formatting
+
+Every detected event produces one `WARNING` line on the `fastapi_loopguard`
+logger, gated on `log_blocking_events`. By default it is plain text and goes
+wherever your app's logging configuration sends it.
+
+`fastapi_loopguard.logging` (imported by module path — it is deliberately not
+re-exported from the package root) installs a handler on that logger, with an
+optional JSON formatter:
+
+```python
+from fastapi_loopguard.logging import configure_logging
+
+configure_logging(structured=True)  # JSON on stderr
+```
+
+That emits one JSON object per event:
+
+```json
+{"timestamp": "2026-09-11T14:12:14.591664+00:00", "level": "WARNING", "logger": "fastapi_loopguard", "message": "Event loop blocked for 494.06ms across 2 in-flight request(s): 59cb0aa5,7b1e2f04"}
+```
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `level` | int | `logging.INFO` | Level set on the `fastapi_loopguard` logger |
+| `structured` | bool | `False` | `True` uses `StructuredFormatter` (JSON); `False` a plain text formatter |
+| `stream` | stream | `sys.stderr` | Where the handler writes |
+
+`configure_logging` is idempotent — calling it again replaces the handler it
+installed rather than stacking a duplicate — and it sets `propagate = False`, so
+an app with its own root handler does not log every event twice. If you already
+configure logging centrally, skip it and attach
+`fastapi_loopguard.logging.StructuredFormatter()` to your own handler instead.
+
+`StructuredFormatter` copies `path`, `method`, `lag_ms`, `request_id` and
+`blocking_count` into the JSON object when a record carries them as `extra`
+fields. The monitor's own line sets none of them — it summarises across all
+in-flight requests in the message instead — and `log_blocking_event()` in the
+same module, a helper for callers who want to emit their own per-request record,
+sets the first four. Nothing in the library sets `blocking_count`: the formatter
+will emit it from a record you build yourself, but never fills it in for you.
+
+---
+
 ## Detection Tuning
 
 | Option | Type | Default | Description |
@@ -116,6 +160,44 @@ reverse proxy.
 | `threshold_multiplier` | float | `5.0` | Blocking detected when lag > baseline × this |
 | `calibration_iterations` | int | `100` | Samples during startup calibration |
 | `fallback_threshold_ms` | float | `50.0` | Threshold before/without calibration, and the hard ceiling a calibrated or adaptive threshold can never exceed. Must be ≥ `monitor_interval_ms` (lag below the sampling interval cannot be resolved). |
+
+### The effective threshold is calibrated, and usually lower than the fallback
+
+`fallback_threshold_ms` is a ceiling, not the value in force. At startup the
+monitor measures the loop's idle baseline (the **minimum** of
+`calibration_iterations` samples) and sets
+
+```
+threshold = clamp(baseline × threshold_multiplier,
+                  monitor_interval_ms,          # floor: lag below the sampling
+                                                # interval cannot be resolved
+                  fallback_threshold_ms)        # ceiling: calibration may only
+                                                # ever tighten detection
+```
+
+An idle loop has a very small baseline, so the product usually falls under the
+floor and the threshold lands on `monitor_interval_ms` — 10 ms at the defaults,
+not 50 ms. (Calibrating with the defaults on a quiet laptop while writing this
+measured a 0.12 ms baseline and a 10 ms threshold.) That is why an app with no
+traffic can log a line like `Event loop blocked for 19.01ms (no active
+request)`: 19 ms is over the threshold actually in force. Those events are real
+stalls with no request in flight to attribute them to — a background task, an
+import, a GC pause — and the log line (plus the Prometheus counter, if enabled)
+is the only channel that reports them, since there is no response to carry a
+header.
+
+Calibration runs in a background task started from the ASGI `lifespan.startup`
+event. An app served without lifespan (an `httpx.ASGITransport` test, for
+instance) starts the monitor lazily on the first request and stops it when the
+last one finishes, so calibration rarely gets to complete there and
+`fallback_threshold_ms` governs.
+
+There is no switch that disables calibration. To keep the threshold at
+`fallback_threshold_ms`, raise `threshold_multiplier` until
+`baseline × multiplier` clears it (with a 0.12 ms baseline, `500.0` pins it at
+50 ms); to loosen detection generally, raise `monitor_interval_ms`, which raises
+the floor with it. `log_blocking_events=False` silences the line without
+changing detection.
 
 **Validation:** `exclude_paths` must be a collection of paths — a bare string is rejected (it would silently become a substring match).
 
