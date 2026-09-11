@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (2026-09-11)
+
+Two security fixes, a detection miss that made the most common shape of
+blocking code invisible, and a `loopguard` console script for enforcing the
+gate outside pytest.
 
 ### Security
 
@@ -28,7 +32,9 @@
   aggregator reading it. Control characters are now escaped.
 - `docs/CONFIGURATION.md` now says plainly that strict mode must not run in
   production, and that the diagnostic headers tell any unauthenticated client
-  which endpoints stall the loop.
+  that the loop stalled while their request was in flight and by how many
+  milliseconds — but never which endpoint caused it, which the sentinel cannot
+  know. What leaks is the timing signal, not an endpoint name.
 
 ### Fixed
 
@@ -85,9 +91,10 @@
   This is the ordinary shape of blocking code, so the miss was the common
   case, not an edge case. `SentinelMonitor.poll()` now takes a synchronous
   measurement on the response path, and `BlockingDetector.stop()` drains its
-  monitor instead of cancelling it. The monitor loop then reports only the
-  residual of a polled tick, so a stall spanning a response is reported in
-  full and no millisecond is counted twice.
+  monitor instead of cancelling it — a bounded drain, and one that no longer
+  lets a monitor exception replace the test's own failure. The monitor loop
+  then reports only the residual of a polled tick, so a stall spanning a
+  response is reported in full and no millisecond is counted twice.
 - **A cancelled or recovering monitor invented blocking.** `poll()` measured
   against the tick marker even when the monitor task had been cancelled or
   was inside its error-recovery sleep, reporting a stall that grew with
@@ -99,12 +106,6 @@
   measurement runs before `unregister_request` — so an exception leaked the
   request context permanently, after which every later blocking event
   attributed to a request that had long finished. Both now swallow and log.
-- **A Prometheus registration failure took the app down.** Only the
-  missing-package case was caught, so a duplicate registration on the
-  process-wide registry failed startup, or the first request on apps without
-  lifespan. Any setup failure now disables metrics and logs.
-- `BlockingDetector.stop()` bounds its drain and no longer lets a monitor
-  exception replace a test's own failure.
 - **`prometheus_enabled` now exposes metrics.** Nothing on the detection path
   imported `metrics.py`, so the flag did nothing at all. The monitor records
   `loopguard_blocking_total`, `loopguard_lag_seconds`,
@@ -113,8 +114,11 @@
   no route label: the sentinel measures loop lag, not call stacks, so it
   cannot say which endpoint blocked, and one event is one increment rather
   than one per in-flight request.
-  Without the `prometheus` extra installed the flag logs an error once and
-  stays off rather than failing the app.
+- **A Prometheus registration failure took the app down.** Only the
+  missing-package case was caught, so a duplicate registration on the
+  process-wide registry failed startup, or the first request on apps without
+  lifespan. Any setup failure — a missing extra included — now logs and
+  leaves metrics off rather than failing the app.
 - **`get_metrics()` could never find an instance.** It looked up the bare
   prefix while `create_metrics()` stored `prefix` plus registry identity. It
   now takes the registry and derives the same key.
@@ -153,7 +157,8 @@ published schema:
   consuming agent reads one key instead of deriving `totals.flagged > 0`.
   A run that instrumented no tests is `"clean"` with `totals.tests: 0`;
   a gate that must also insist the suite was checked reads `totals.tests`
-  alongside it. The change is additive — `totals` is untouched. (#48)
+  alongside it, which is what `loopguard report` now does by default. The
+  change is additive — `totals` is untouched. (#48)
 - `docs/loopguard-report.schema.json` (JSON Schema draft 2020-12) describes
   the payload, with `additionalProperties: true` throughout because the
   report grows by adding keys. CI validates the documented example and a
@@ -187,8 +192,6 @@ published schema:
   no longer a valid extra name and pip will warn that it does not exist. The
   alternative, wiring `StructuredFormatter` onto structlog, would have been a
   new feature rather than a packaging fix. (#51)
-- Python 3.14 is claimed: added to the CI matrix and to the PyPI classifiers.
-  (#46)
 - `enforcement_mode` is typed `Literal["log", "warn", "strict"]` and the alias
   is exported as `fastapi_loopguard.EnforcementMode`, so a misspelled mode is a
   type error at the call site instead of a `ValueError` at startup. The runtime
@@ -201,7 +204,8 @@ published schema:
 
 - **The minimum Python is now 3.11**, down from 3.12. Nothing in the library
   needed 3.12; the real floor is `asyncio.Task.cancelling()`, which landed in
-  3.11. CI runs 3.11, 3.12, 3.13 and 3.14.
+  3.11. Python 3.14 is claimed at the other end: CI runs 3.11, 3.12, 3.13 and
+  3.14, and the PyPI classifiers list all four. (#46)
 
 ### Documentation
 
