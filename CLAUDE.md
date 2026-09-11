@@ -99,6 +99,7 @@ src/fastapi_loopguard/
 - HTTP tests use `httpx.AsyncClient(transport=ASGITransport(app=app))`. Plugin tests use the `pytester` fixture to run generated test files in-process.
 - Each invariant has dedicated coverage: `test_enforcement_mode.py` for modes and dev-mode escalation, `test_monitor.py` for calibration, idempotency, and task cancellation, `test_cumulative_blocking.py` for the window, `test_context.py` for registry lifecycle and `__slots__`, `test_pytest_plugin.py` for the marker.
 - Timing tests are inherently flaky under load. Prefer driving `SentinelMonitor` directly with an `on_blocking` callback (as `test_cumulative_blocking.py` does) over asserting on wall-clock durations.
+- A test that asserts a request is measured **clean** against a tight threshold is asserting that nothing stalled the loop, which is not something the test controls. `TestStrictModeHeaders` runs a 2ms tick with a 5ms threshold, so its window is ~7ms of uninterrupted loop time, and a generational GC pass in this suite measures 4.3-17.8ms on 3.11 under coverage. Where those passes land is a deterministic function of the session's allocation sequence, so adding a test *anywhere* can move one into such a window and turn a clean request into a 503. `test_clean_strict_response_carries_diagnostic_headers` pins the collector for its request for that reason; raising the threshold instead would weaken exactly what it asserts.
 
 ## The evals harness (`evals/`)
 
