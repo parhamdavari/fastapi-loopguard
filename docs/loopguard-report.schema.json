@@ -9,6 +9,7 @@
   "properties": {
     "schema_version": {
       "description": "Version of this report contract. Bumped whenever the shape changes; the $id of the matching schema carries the same number.",
+      "type": "integer",
       "const": 2
     },
     "status": {
@@ -17,9 +18,9 @@
       "enum": ["blocked", "clean"]
     },
     "threshold_ms": {
-      "description": "Loop lag, in milliseconds, beyond which a test is flagged (loopguard_threshold_ms).",
+      "description": "Loop lag, in milliseconds, beyond which a test is flagged (loopguard_threshold_ms). Zero is permitted: the plugin does not reject loopguard_threshold_ms = 0, so a report can carry it.",
       "type": "number",
-      "exclusiveMinimum": 0
+      "minimum": 0
     },
     "totals": {
       "description": "Counts over the instrumented tests only.",
@@ -91,9 +92,9 @@
           "type": "number"
         },
         "threshold_ms": {
-          "description": "Threshold this event was measured against, in milliseconds.",
+          "description": "Threshold this event was measured against, in milliseconds. Zero is permitted, as above.",
           "type": "number",
-          "exclusiveMinimum": 0
+          "minimum": 0
         }
       }
     }
