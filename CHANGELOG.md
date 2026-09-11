@@ -76,16 +76,73 @@
 - `docs/CONFIGURATION.md` listed two metric names that do not exist. It now
   documents the four real ones, their labels, and how to serve them.
 
+### Command-line interface
+
+- **New `loopguard` console script.** `loopguard report loopguard.json`
+  reads a report the pytest plugin wrote, prints a one-line summary plus a
+  line per flagged test, and exits `0` when clean, `1` when blocking was
+  detected, `2` when the report is missing, unreadable, or malformed — the
+  ruff/pyright convention. It lets an agent or a CI step enforce the gate
+  outside pytest, without parsing JSON itself. The verdict comes from the
+  top-level `status` key, falling back to `totals.flagged > 0` for a
+  `schema_version` 1 report. `--quiet` gives the exit code alone.
+  `docs/AI-HARNESS.md` documents the exit codes and the CI invocation.
+  No new dependency: `cli.py` is standard-library-only and, deliberately,
+  never imports `pytest_plugin` — that module imports `pytest`, which a
+  production install does not have. (#49)
+- **`loopguard report` now exits `2`, not `0`, for a clean report that
+  instrumented zero tests.** A misconfigured `asyncio_mode`, a missing
+  `pytest-asyncio` install, or a rename that dropped every async test all
+  produce `{"status": "clean", "totals": {"tests": 0, ...}}` — a run that
+  tested nothing, previously read as a passing gate. The CLI now treats
+  that as a setup failure by default and prints a one-line warning to
+  stderr; pass `--allow-empty` to keep the old exit-`0` behavior for the
+  cases where zero tests is genuinely expected.
+
+### Report contract
+
+The `loopguard.json` report contract is now `schema_version` 2 and has a
+published schema:
+
+- The report carries a top-level `"status": "blocked" | "clean"`, so a
+  consuming agent reads one key instead of deriving `totals.flagged > 0`.
+  A run that instrumented no tests is `"clean"` with `totals.tests: 0`;
+  a gate that must also insist the suite was checked reads `totals.tests`
+  alongside it. The change is additive — `totals` is untouched. (#48)
+- `docs/loopguard-report.schema.json` (JSON Schema draft 2020-12) describes
+  the payload, with `additionalProperties: true` throughout because the
+  report grows by adding keys. CI validates the documented example and a
+  freshly generated report against it. (#50)
+
+### Packaging
+
+- **Removed the `structlog` extra.** `pip install fastapi-loopguard[structlog]`
+  installed `structlog` and changed nothing, because no module in `src/` imports
+  it; it was also pulled in by `[all]`. Anyone depending on that extra to
+  install structlog must now depend on `structlog` directly — `[structlog]` is
+  no longer a valid extra name and pip will warn that it does not exist. The
+  alternative, wiring `StructuredFormatter` onto structlog, would have been a
+  new feature rather than a packaging fix. (#51)
+- Python 3.14 is claimed: added to the CI matrix and to the PyPI classifiers.
+  (#46)
+- `enforcement_mode` is typed `Literal["log", "warn", "strict"]` and the alias
+  is exported as `fastapi_loopguard.EnforcementMode`, so a misspelled mode is a
+  type error at the call site instead of a `ValueError` at startup. The runtime
+  validation in `__post_init__` is unchanged. (#44)
+- ruff's `target-version` is no longer pinned; it is derived from
+  `project.requires-python`, so a `ruff --fix` can never rewrite code into
+  syntax newer than the package claims to support. (#45)
+
 ### Changed
 
 - **The minimum Python is now 3.11**, down from 3.12. Nothing in the library
   needed 3.12; the real floor is `asyncio.Task.cancelling()`, which landed in
-  3.11. CI runs 3.11, 3.12 and 3.13.
+  3.11. CI runs 3.11, 3.12, 3.13 and 3.14.
 
----
+### Evals
 
-The `evals/` benchmark and the claims it backs were
-corrected; `README.md` and `docs/AI-HARNESS.md` now quote the new figures.
+The `evals/` benchmark and the claims it backs were also corrected;
+`README.md` and `docs/AI-HARNESS.md` now quote the new figures.
 
 - The scorer no longer reports an unmeasured sample as non-blocking. A
   solution that failed to import, returned empty, or was rejected before the

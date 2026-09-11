@@ -31,9 +31,9 @@ CI lints and type-checks `src/` and `tests/` only — `examples/` is unchecked a
 
 ## Tech Stack (versions verified 2026-08-11)
 
-- Python `>=3.11`; CI matrix is 3.11, 3.12 and 3.13. mypy is pinned to `python_version = "3.11"` with `strict = true`. The floor is 3.11 because `asyncio.Task.cancelling()` (used in `monitor.py` and `pytest_plugin.py`) landed there; nothing needs 3.12.
+- Python `>=3.11`; CI matrix is 3.11, 3.12, 3.13 and 3.14. mypy is pinned to `python_version = "3.11"` with `strict = true`. The floor is 3.11 because `asyncio.Task.cancelling()` (used in `monitor.py` and `pytest_plugin.py`) landed there; nothing needs 3.12. ruff's `target-version` is deliberately unset so it derives from `requires-python` and the `UP` rewrites can never outrun the declared floor.
 - **One runtime dependency: `starlette>=0.37.0,<2.0`.** FastAPI is a *dev* dependency — the middleware is pure ASGI and must never import `fastapi` from `src/`. Adding any runtime dependency requires asking first.
-- Extras: `prometheus` (prometheus-client), `structlog`, `all`, `dev`, `stress` (locust + uvicorn). The `structlog` extra is currently declared but unused — nothing imports structlog.
+- Extras: `prometheus` (prometheus-client), `all`, `dev`, `stress` (locust + uvicorn). Every extra must make an observable difference once installed — a declared-but-unused `structlog` extra was removed for that reason, and adding an extra nothing imports is the same defect.
 - ruff selects `["E","F","I","N","W","UP","B","C4","SIM","ANN"]`, ignoring only `ANN401`. **`ANN` means every function needs full annotations**, tests and fixtures included. Line length 88, double quotes.
 - Build backend is hatchling; wheel packages `src/fastapi_loopguard`. Publishing triggers on a `v*` tag via PyPI trusted publishing (OIDC) — there is **no version-bump automation**, so `pyproject.toml` must be bumped by hand. `__init__.__version__` is derived from installed package metadata; after bumping, re-run `pip install -e .` or the version tests fail against stale metadata.
 - `.claude/` is git-ignored and excluded from the sdist. Committing anything there needs an explicit `.gitignore` negation.
@@ -49,9 +49,12 @@ src/fastapi_loopguard/
   logging.py        StructuredFormatter (JSON), configure_logging, log_blocking_event
   metrics.py        optional Prometheus LoopGuardMetrics, wired in when prometheus_enabled
   pytest_plugin.py  pytest11 entry point, @pytest.mark.no_blocking, BlockingDetector
+  cli.py            `loopguard` console script — `loopguard report PATH`, exit 0/1/2
 ```
 
-**Layering (strict — a module imports only lower layers):** `config`, `context` → `monitor` → `middleware`. `logging` and `pytest_plugin` are leaves; nothing on the detection path imports them, and they must not import `middleware`. `metrics` is the one exception: `monitor.__init__` imports it lazily, and only when `prometheus_enabled` is set, so `prometheus_client` stays off the import path of every app that does not ask for it. `middleware.py` imports `LoopGuardConfig` inside `__init__` with an "avoid circular imports" comment — the cycle no longer exists, but the deferred import is harmless and not worth churning.
+**Layering (strict — a module imports only lower layers):** `config`, `context` → `monitor` → `middleware`. `logging`, `pytest_plugin`, and `cli` are leaves; nothing on the detection path imports them, and they must not import `middleware`. `metrics` is the one exception: `monitor.__init__` imports it lazily, and only when `prometheus_enabled` is set, so `prometheus_client` stays off the import path of every app that does not ask for it.
+
+`cli.py` is the strictest leaf: it imports **only the standard library**. In particular it must never import `fastapi_loopguard.pytest_plugin`, which imports `pytest` — a dev dependency the console script's users will not have. It consumes the report as data against `docs/loopguard-report.schema.json` rather than importing the writer, and it does not validate against that schema at runtime (that needs `jsonschema`, also dev-only). `tests/test_cli.py` enforces both: an AST check on the import list and a subprocess import with `pytest` absent. `middleware.py` imports `LoopGuardConfig` inside `__init__` with an "avoid circular imports" comment — the cycle no longer exists, but the deferred import is harmless and not worth churning.
 
 `pytest_plugin.py` is registered as a `pytest11` entry point, so it auto-loads for **every** project that installs this package. Treat its hooks as public API and keep them cheap and side-effect-free for unmarked tests.
 
@@ -85,7 +88,7 @@ src/fastapi_loopguard/
 - Logger name is `"fastapi_loopguard"`, shared by `monitor.py` and `logging.py`. `monitor.py` logs inline with `%`-style lazy formatting; `logging.log_blocking_event()` is a helper for library *users* and is intentionally not called internally.
 - `exclude_paths` is checked before anything else in `_handle_http`, so health checks cost nothing.
 - Backward-compat shims are public API and stay: `get_current_request`, `set_current_request`, `reset_current_request`, `init_metrics`. `get_current_request` returns an arbitrary active context and is only correct for single-request cases — new code uses `get_active_requests()`.
-- `logging`, `metrics`, and `pytest_plugin` are **not** re-exported from `__init__.py`; import them by module path.
+- `logging`, `metrics`, `pytest_plugin`, and `cli` are **not** re-exported from `__init__.py`; import them by module path.
 
 ## Testing
 

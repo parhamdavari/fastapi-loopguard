@@ -40,6 +40,11 @@ logger = logging.getLogger("fastapi_loopguard")
 # monitor's own interval is 5ms, so this is slack, not a budget.
 _DRAIN_TIMEOUT_SEC = 0.1
 
+# Version of the JSON report contract. Bump on any shape change; the
+# schema that describes it is docs/loopguard-report.schema.json. Changes
+# must stay additive — consumers reading older keys keep working.
+REPORT_SCHEMA_VERSION = 2
+
 # Marker for tests that should fail on blocking
 MARKER_NAME = "no_blocking"
 # Opt-out marker for loopguard_all_async mode
@@ -277,12 +282,19 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
 
     records = config.stash.get(_REPORT_KEY, [])
+    flagged = sum(1 for r in records if r["verdict"] == "blocked")
     report = {
-        "schema_version": 1,
+        "schema_version": REPORT_SCHEMA_VERSION,
+        # One top-level verdict so a consumer does not have to derive it.
+        # A run that instrumented nothing is "clean": the report states what
+        # was observed, and nothing blocked because nothing was watched. A
+        # gate that must also insist the suite was actually checked reads
+        # totals.tests > 0 alongside it.
+        "status": "blocked" if flagged else "clean",
         "threshold_ms": _threshold_ms(config),
         "totals": {
             "tests": len(records),
-            "flagged": sum(1 for r in records if r["verdict"] == "blocked"),
+            "flagged": flagged,
         },
         "tests": records,
     }

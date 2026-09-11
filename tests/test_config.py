@@ -2,7 +2,7 @@
 
 import pytest
 
-from fastapi_loopguard import LoopGuardConfig
+from fastapi_loopguard import EnforcementMode, LoopGuardConfig
 
 
 class TestLoopGuardConfig:
@@ -34,6 +34,19 @@ class TestLoopGuardConfig:
         assert config.monitor_interval_ms == 50.0
         assert config.threshold_multiplier == 10.0
         assert config.dev_mode is True
+
+    def test_enforcement_mode_accepts_every_literal(self) -> None:
+        """enforcement_mode defaults to warn and accepts each valid literal."""
+        assert LoopGuardConfig().enforcement_mode == "warn"
+
+        modes: tuple[EnforcementMode, ...] = ("log", "warn", "strict")
+        for mode in modes:
+            assert LoopGuardConfig(enforcement_mode=mode).enforcement_mode == mode
+
+    def test_invalid_enforcement_mode(self) -> None:
+        """A value outside the literal still raises at runtime, for untyped callers."""
+        with pytest.raises(ValueError, match="enforcement_mode must be one of"):
+            LoopGuardConfig(enforcement_mode="strikt")  # type: ignore[arg-type]
 
     def test_invalid_monitor_interval(self) -> None:
         """Test that invalid monitor_interval_ms raises ValueError."""

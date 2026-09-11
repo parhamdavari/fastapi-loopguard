@@ -1,12 +1,12 @@
 # Eval-harness-only dependencies. NOT runtime dependencies of the package.
 
 # The API adapters. The local adapter works without them.
-anthropic>=0.40
-openai>=1.50
+anthropic>=1.4.0
+openai>=3.8.0
 
 # Optional FastAPI dependencies a *solution* may reach for. Without these the
 # judge fails the sample at import time and the harness's missing dependency is
 # scored as the model's mistake: `Form(...)` needs python-multipart, and async
 # file I/O is one of the fix hints the pytest plugin itself suggests.
-python-multipart>=0.0.9
-aiofiles>=23.0
+python-multipart>=0.0.32
+aiofiles>=25.1.0

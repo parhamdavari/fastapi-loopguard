@@ -11,7 +11,12 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware, SentinelMonitor
+from fastapi_loopguard import (
+    EnforcementMode,
+    LoopGuardConfig,
+    LoopGuardMiddleware,
+    SentinelMonitor,
+)
 from fastapi_loopguard.context import get_active_requests, get_registry
 
 if TYPE_CHECKING:
@@ -38,19 +43,20 @@ class TestEnforcementModeConfig:
 
     def test_valid_enforcement_modes(self) -> None:
         """Test that all valid enforcement modes are accepted."""
-        for mode in ["log", "warn", "strict"]:
+        modes: tuple[EnforcementMode, ...] = ("log", "warn", "strict")
+        for mode in modes:
             config = LoopGuardConfig(enforcement_mode=mode)
             assert config.enforcement_mode == mode
 
     def test_invalid_enforcement_mode_raises(self) -> None:
         """Test that invalid enforcement mode raises ValueError."""
         with pytest.raises(ValueError, match="enforcement_mode must be one of"):
-            LoopGuardConfig(enforcement_mode="invalid")
+            LoopGuardConfig(enforcement_mode="invalid")  # type: ignore[arg-type]
 
     def test_invalid_enforcement_mode_error_message(self) -> None:
         """Test that error message includes the invalid value."""
         with pytest.raises(ValueError, match="got 'bad_mode'"):
-            LoopGuardConfig(enforcement_mode="bad_mode")
+            LoopGuardConfig(enforcement_mode="bad_mode")  # type: ignore[arg-type]
 
 
 class TestLogMode:
@@ -499,7 +505,8 @@ class TestEffectiveEnforcementMode:
         """Effective mode is always the configured mode, regardless of dev_mode."""
         app = FastAPI()
 
-        for mode in ["log", "warn", "strict"]:
+        modes: tuple[EnforcementMode, ...] = ("log", "warn", "strict")
+        for mode in modes:
             for dev_mode in [False, True]:
                 config = LoopGuardConfig(
                     enforcement_mode=mode,
