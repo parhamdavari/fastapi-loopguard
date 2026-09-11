@@ -1,6 +1,9 @@
 """Configuration for LoopGuard middleware."""
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+EnforcementMode = Literal["log", "warn", "strict"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +39,7 @@ class LoopGuardConfig:
 
     # Enforcement mode: how aggressively to respond to blocking
     # "log" = just log (production), "warn" = loud warnings, "strict" = 503 errors
-    enforcement_mode: str = "warn"
+    enforcement_mode: Literal["log", "warn", "strict"] = "warn"
 
     # Adaptive threshold settings
     adaptive_threshold: bool = False

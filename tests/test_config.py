@@ -20,6 +20,7 @@ class TestLoopGuardConfig:
         assert config.dev_mode is False
         assert config.log_blocking_events is True
         assert config.prometheus_enabled is False
+        assert config.enforcement_mode == "warn"
 
     def test_custom_config(self) -> None:
         """Test custom configuration values."""
@@ -28,12 +29,25 @@ class TestLoopGuardConfig:
             monitor_interval_ms=50.0,
             threshold_multiplier=10.0,
             dev_mode=True,
+            enforcement_mode="strict",
         )
 
         assert config.enabled is False
         assert config.monitor_interval_ms == 50.0
         assert config.threshold_multiplier == 10.0
         assert config.dev_mode is True
+        assert config.enforcement_mode == "strict"
+
+    def test_valid_enforcement_modes(self) -> None:
+        """Test that all valid enforcement modes are accepted."""
+        for mode in ("log", "warn", "strict"):
+            config = LoopGuardConfig(enforcement_mode=mode)
+            assert config.enforcement_mode == mode
+
+    def test_invalid_enforcement_mode(self) -> None:
+        """Test that invalid enforcement_mode raises ValueError."""
+        with pytest.raises(ValueError, match="enforcement_mode must be one of"):
+            LoopGuardConfig(enforcement_mode="invalid")  # type: ignore[arg-type]
 
     def test_invalid_monitor_interval(self) -> None:
         """Test that invalid monitor_interval_ms raises ValueError."""

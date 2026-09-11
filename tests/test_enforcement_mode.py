@@ -44,12 +44,12 @@ class TestEnforcementModeConfig:
     def test_invalid_enforcement_mode_raises(self) -> None:
         """Test that invalid enforcement mode raises ValueError."""
         with pytest.raises(ValueError, match="enforcement_mode must be one of"):
-            LoopGuardConfig(enforcement_mode="invalid")
+            LoopGuardConfig(enforcement_mode="invalid")  # type: ignore[arg-type]
 
     def test_invalid_enforcement_mode_error_message(self) -> None:
         """Test that error message includes the invalid value."""
         with pytest.raises(ValueError, match="got 'bad_mode'"):
-            LoopGuardConfig(enforcement_mode="bad_mode")
+            LoopGuardConfig(enforcement_mode="bad_mode")  # type: ignore[arg-type]
 
 
 class TestLogMode:

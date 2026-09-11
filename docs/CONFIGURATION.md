@@ -38,7 +38,7 @@ config = LoopGuardConfig(
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enabled` | bool | `True` | Master switch. Set `False` to disable entirely. |
-| `enforcement_mode` | str | `"warn"` | How to respond: `"log"`, `"warn"`, or `"strict"` |
+| `enforcement_mode` | Literal["log", "warn", "strict"] | `"warn"` | How to respond: `"log"`, `"warn"`, or `"strict"` |
 | `dev_mode` | bool | `False` | Enables response headers. Never changes the enforcement mode. |
 | `log_blocking_events` | bool | `True` | Log blocking events to console |
 | `exclude_paths` | frozenset | `{"/health", ...}` | Paths to skip monitoring |

@@ -34,7 +34,7 @@ v0.3.0 Changes:
 
 from importlib.metadata import version as _package_version
 
-from .config import LoopGuardConfig
+from .config import EnforcementMode, LoopGuardConfig
 from .context import (
     RequestContext,
     RequestRegistry,
@@ -51,6 +51,7 @@ __version__ = _package_version("fastapi-loopguard")
 
 __all__ = [
     # Core classes
+    "EnforcementMode",
     "LoopGuardConfig",
     "LoopGuardMiddleware",
     "SentinelMonitor",
