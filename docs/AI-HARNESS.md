@@ -169,6 +169,95 @@ a 503 whose JSON body carries the same shape of diagnosis
 (`error: "event_loop_blocked"`, blocking count and total ms, and the same
 fix suggestions under `help.common_causes`).
 
+### Checking a running app directly
+
+This path needs no pytest and no plugin — just a strict-mode app and an
+HTTP client. `examples/demo_app.py` is already configured that way, so it
+works as-is:
+
+```bash
+python examples/demo_app.py                # :8765, enforcement_mode="strict"
+```
+
+Ask for JSON explicitly. The middleware serves the educational HTML page to
+any request whose `Accept` header contains `text/html` and the JSON body to
+everything else, so an explicit `Accept: application/json` is what keeps the
+output parseable regardless of client defaults.
+
+```bash
+curl -sS -m 30 -H 'Accept: application/json' \
+  -w '\nHTTP %{http_code}\n' http://127.0.0.1:8765/api/users
+```
+
+Against the demo app's blocking endpoint that prints:
+
+```json
+{
+  "error": "event_loop_blocked",
+  "message": "Event loop blocking detected while this request was in flight",
+  "request": {
+    "id": "eb564065",
+    "method": "GET",
+    "path": "/api/users"
+  },
+  "blocking": {
+    "count": 1,
+    "total_ms": 3000.99
+  },
+  "help": {
+    "problem": "Synchronous code blocked the async event loop",
+    "common_causes": [
+      "time.sleep() -> await asyncio.sleep()",
+      "requests.get() -> await httpx.AsyncClient().get()",
+      "open().read() -> await aiofiles.open()",
+      "subprocess.run() -> asyncio.create_subprocess_exec()",
+      "CPU-bound work -> asyncio.to_thread(func)"
+    ],
+    "docs": "https://fastapi.tiangolo.com/async/"
+  }
+}
+```
+
+`blocking.count` is how many events were attributed to this request and
+`blocking.total_ms` their total. The same two numbers are on the response as
+`x-blocking-count` and `x-blocking-total-ms`, next to
+`x-loopguard-enforcement: strict`.
+
+The same check in Python (`pip install httpx` — it is a dev dependency of
+this package, not a runtime one), exiting non-zero when blocking was seen:
+
+```python
+import httpx
+
+resp = httpx.get(
+    "http://127.0.0.1:8765/api/users",
+    headers={"Accept": "application/json"},
+    timeout=30.0,
+)
+body = resp.json()
+if resp.status_code == 503 and body.get("error") == "event_loop_blocked":
+    blocking = body["blocking"]
+    print(f"blocked count={blocking['count']} total_ms={blocking['total_ms']}")
+    raise SystemExit(1)
+print(f"no blocking observed status={resp.status_code}")
+```
+
+The verdict to derive: `503` **and** `error == "event_loop_blocked"` means
+blocking was observed while that request was in flight — fail. `200` means
+LoopGuard observed no blocking on that request, which is not the same as the
+app being clean. Check both, not the status alone: a 503 from the app's own
+handler is not a LoopGuard verdict. And under concurrent load the 503 goes to
+every request in flight during the stall, not only the one that blocked, so
+drive this one request at a time if you want to read it as a per-endpoint
+result.
+
+Do not use this path on a `StreamingResponse`, SSE, or token-streaming
+route. The status and the headers are decided at `http.response.start`,
+before the body generator runs, so neither can report blocking that happens
+after the first chunk is on the wire — see [Streaming responses are a blind
+spot](CONFIGURATION.md#streaming-responses-are-a-blind-spot). Those routes
+need the log output instead.
+
 ## Drop-in snippet for a consumer project's CLAUDE.md / agents.md
 
 ```markdown

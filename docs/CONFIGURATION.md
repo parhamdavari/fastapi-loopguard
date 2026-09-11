@@ -174,6 +174,8 @@ config = LoopGuardConfig(enforcement_mode="strict")
 ```
 Remember that this 503s every request in flight during a stall, not just the one
 that blocked — see [Strict mode fails every request in flight](#strict-mode-fails-every-request-in-flight).
+For a runnable `curl`/`httpx` check against an app running in this mode, see
+[Checking a running app directly](AI-HARNESS.md#checking-a-running-app-directly).
 
 ### Production (silent monitoring)
 ```python
