@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import gc
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -708,7 +707,7 @@ class TestStreamingConsoleBanner:
 class TestStrictModeHeaders:
     """Full header contract of the strict 503 and the clean pass-through."""
 
-    def _blocking_app(self) -> FastAPI:
+    def _strict_app(self, config: LoopGuardConfig) -> FastAPI:
         app = FastAPI()
 
         @app.get("/blocking")
@@ -722,14 +721,40 @@ class TestStrictModeHeaders:
             await asyncio.sleep(0.001)
             return {"status": "fast"}
 
-        config = LoopGuardConfig(
-            enforcement_mode="strict",
-            monitor_interval_ms=2.0,
-            fallback_threshold_ms=5.0,
-            log_blocking_events=False,
-        )
         app.add_middleware(LoopGuardMiddleware, config=config)
         return app
+
+    def _blocking_app(self) -> FastAPI:
+        """Tight enough to see the 100ms stall in /blocking straight away.
+
+        Only the tests that assert blocking *is* detected use this. A tight
+        threshold can only produce false positives, never false negatives,
+        so it costs those tests nothing.
+        """
+        return self._strict_app(
+            LoopGuardConfig(
+                enforcement_mode="strict",
+                monitor_interval_ms=2.0,
+                fallback_threshold_ms=5.0,
+                log_blocking_events=False,
+            )
+        )
+
+    def _clean_app(self) -> FastAPI:
+        """The same app at the shipped defaults, for the clean pass-through.
+
+        _blocking_app's 2ms tick and 5ms threshold leave ~7ms of
+        uninterrupted loop time before a request is called blocked, and an
+        ordinary generational GC pass in this suite measures 4.3-17.8ms on
+        3.11 under coverage -- so that margin is thinner than a routine
+        background pause the same process already produces, and a test that
+        asserts nothing blocked cannot rely on it. Nothing here needs a
+        tight threshold: the assertions are about the pass-through status
+        and header set, not about detection sensitivity.
+        """
+        return self._strict_app(
+            LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        )
 
     async def test_503_carries_full_strict_header_set(self) -> None:
         app = self._blocking_app()
@@ -752,28 +777,13 @@ class TestStrictModeHeaders:
         assert int(response.headers["content-length"]) == len(response.content)
 
     async def test_clean_strict_response_carries_diagnostic_headers(self) -> None:
-        app = self._blocking_app()
+        app = self._clean_app()
 
-        # This app polls on a 2ms tick with a 5ms threshold, so the whole
-        # request has to fit in ~7ms of uninterrupted loop time. A
-        # generational GC pass over this suite's heap measures 4-18ms on
-        # 3.11 under coverage, and where those passes land is a
-        # deterministic function of the session's allocation sequence --
-        # so adding a test anywhere in the suite can move one into this
-        # window and 503 a request that did nothing wrong. That is the
-        # library reporting a real stall it did not cause. Collect first,
-        # then hold the collector off; the threshold and the assertions
-        # below are unchanged.
-        gc.collect()
-        gc.disable()
-        try:
-            async with AsyncClient(
-                transport=ASGITransport(app=app),
-                base_url="http://test",
-            ) as client:
-                response = await client.get("/fast")
-        finally:
-            gc.enable()
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.get("/fast")
 
         assert response.status_code == 200
         assert response.headers.get("x-blocking-detected") == "false"
