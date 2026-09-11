@@ -139,6 +139,28 @@ published schema:
   needed 3.12; the real floor is `asyncio.Task.cancelling()`, which landed in
   3.11. CI runs 3.11, 3.12, 3.13 and 3.14.
 
+### Documentation
+
+- Every `README.md` link into the repository is now an absolute GitHub URL
+  pinned to a tag, like the images. The README is the PyPI long description
+  and the wheel ships no docs, so the relative links to
+  `docs/AI-HARNESS.md`, `docs/CONFIGURATION.md`, `FINDINGS.md` and
+  `evals/README.md` resolved under pypi.org and reached nothing.
+- The README now says the detection threshold is calibrated at startup and
+  usually lands on the `monitor_interval_ms` floor (10 ms at the defaults),
+  not on `fallback_threshold_ms` — which is why an idle app can log a
+  sub-50 ms "no active request" event. `docs/CONFIGURATION.md` carries the
+  clamp formula, the lifespan caveat, and how to pin the threshold at the
+  fallback.
+- `docs/CONFIGURATION.md` documents `fastapi_loopguard.logging`:
+  `configure_logging`, its arguments, and the JSON `StructuredFormatter`.
+  The README's log-mode description no longer calls the default output
+  "structured" — it is one plain-text line unless you install that formatter.
+- The enforcement-modes snippet is three self-contained blocks instead of one
+  block that rebound `config` three times and applied only the last, and the
+  strict-mode section says the educational page is HTML only when `Accept`
+  contains `text/html` (JSON otherwise).
+
 ### Evals
 
 The `evals/` benchmark and the claims it backs were also corrected;
