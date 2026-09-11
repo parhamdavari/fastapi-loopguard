@@ -597,6 +597,113 @@ class TestStrictModeStreaming:
         assert sent == []  # neither the app's 200 nor a LoopGuard 503
 
 
+class TestStreamingConsoleBanner:
+    """The console banner must survive a stall that starts mid-stream.
+
+    The banner used to be printed only from the send wrapper, at
+    http.response.start. Starlette's StreamingResponse sends that message
+    before its body generator runs, so a stall inside the generator produced
+    the log line and no banner at all -- a warn-mode user who was shown the
+    banner in the quick start and watches for it saw nothing. It is now also
+    printed after dispatch returns, gated so one request prints at most one.
+    """
+
+    @staticmethod
+    def _banner_count(err: str) -> int:
+        return err.count("LOOPGUARD: Event Loop Blocked!")
+
+    @staticmethod
+    async def _run_streaming_app(config: LoopGuardConfig, sent: list[Message]) -> None:
+        """Drive an app that blocks after its headers are on the wire."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send(
+                {"type": "http.response.body", "body": b"chunk1", "more_body": True}
+            )
+            # The stall lands after the send wrapper has already run
+            ctx = next(iter(get_active_requests()))
+            ctx.record_blocking(600.0)
+            await send(
+                {"type": "http.response.body", "body": b"chunk2", "more_body": False}
+            )
+
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope: Scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/stream",
+            "headers": [],
+        }
+        await middleware(scope, receive, send)
+
+    async def test_warn_mode_banner_survives_a_mid_stream_stall(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The channel the docs tell a warn-mode user to watch still fires."""
+        config = LoopGuardConfig(enforcement_mode="warn", log_blocking_events=False)
+        sent: list[Message] = []
+
+        await self._run_streaming_app(config, sent)
+
+        err = capsys.readouterr().err
+        assert self._banner_count(err) == 1
+        assert "GET /stream" in err
+        # The response is still untouched: those headers went out before the
+        # stall and cannot be revised.
+        assert dict(sent[0]["headers"])[b"x-blocking-detected"] == b"false"
+
+    async def test_strict_mode_banner_survives_a_mid_stream_stall(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """No 503 is possible once the 200 has shipped, but the banner is."""
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent: list[Message] = []
+
+        await self._run_streaming_app(config, sent)
+
+        assert self._banner_count(capsys.readouterr().err) == 1
+        assert sent[0]["status"] == 200  # unchanged; the 503 window has closed
+
+    async def test_one_event_still_prints_exactly_one_banner(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Blocking seen before the headers must not now print twice.
+
+        The send wrapper prints the banner and the post-dispatch pass is
+        gated on that, so an ordinary response still gets exactly one.
+        """
+        app = FastAPI()
+        app.add_middleware(
+            LoopGuardMiddleware,
+            config=LoopGuardConfig(
+                enforcement_mode="warn",
+                fallback_threshold_ms=20.0,
+                log_blocking_events=False,
+            ),
+        )
+
+        @app.get("/blocking")
+        async def blocking_endpoint() -> dict[str, bool]:
+            time.sleep(0.2)
+            await asyncio.sleep(0.02)
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/blocking")
+
+        assert response.headers["x-loopguard-warning"] == "blocking-detected"
+        assert self._banner_count(capsys.readouterr().err) == 1
+
+
 class TestStrictModeHeaders:
     """Full header contract of the strict 503 and the clean pass-through."""
 

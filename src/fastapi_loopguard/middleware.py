@@ -707,6 +707,16 @@ class LoopGuardMiddleware:
 
         await self.app(scope, receive, send_wrapper)
 
+        # A streaming body blocks after http.response.start, so the wrapper
+        # above already ran and printed nothing. Poll (the stall may still be
+        # an unmeasured tick) and warn here, where a mid-stream stall is
+        # visible. Gated on warning_logged, so one request prints at most one
+        # banner and a non-streaming response still prints exactly the one
+        # the wrapper printed.
+        self._poll_monitor()
+        if not warning_logged and ctx.blocking_count > 0:
+            self._log_console_warning(ctx)
+
     async def _handle_strict_mode(
         self,
         scope: Scope,
@@ -770,3 +780,11 @@ class LoopGuardMiddleware:
         if blocking_detected:
             self._log_console_warning(ctx)
             await self._send_strict_error(send, ctx, accepts_html)
+            return
+
+        # Blocking first seen mid-stream cannot be 503'd — the 200 is already
+        # on the wire — but the banner still reaches the operator. Same gate
+        # as warn mode: exactly one banner per request.
+        self._poll_monitor()
+        if ctx.blocking_count > 0:
+            self._log_console_warning(ctx)

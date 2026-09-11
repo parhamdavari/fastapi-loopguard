@@ -83,10 +83,12 @@ So for `StreamingResponse`, SSE, and token-streaming endpoints:
   `x-blocking-detected: false`;
 - strict mode cannot 503 a response whose `200` has already shipped.
 
-The channel that still works for those routes is the log output: the monitor logs
-each event as it is detected, independently of the response, so
-`enforcement_mode="log"` (or `"warn"`) reports the stall even when no header can.
-Do not rely on response headers or strict mode to guard a streaming endpoint.
+Two channels still work for those routes. The monitor logs each event as it is
+detected, independently of the response. And `"warn"` and `"strict"` check again
+after the handler returns, which is late enough to see a stall that began
+mid-stream, so the console banner still reaches stderr — at most one banner per
+request. Do not rely on response headers or strict mode to guard a streaming
+endpoint.
 
 ---
 
