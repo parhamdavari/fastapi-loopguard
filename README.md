@@ -114,7 +114,7 @@ other request on the worker until they return.
 
 **Strict mode 503s every request that was in flight during the stall, not just the one that blocked.** The sentinel measures event-loop lag, so it cannot name the guilty handler. With 100 concurrent requests and one of them blocking, the other 99 also get a 503 — same body, same `x-blocking-total-ms`. That is why strict mode is opt-in, and why `dev_mode` cannot switch it on.
 
-**Streaming responses are a blind spot.** Headers and the strict-mode 503 are both decided at `http.response.start`, which Starlette's `StreamingResponse` sends before the body generator runs. For `StreamingResponse`, SSE, and token-streaming endpoints, response headers and strict-mode 503s cannot report blocking that happens after the first chunk is on the wire. The log output and the console banner still report it — the monitor logs each event independently of the response, and `"warn"` and `"strict"` print the banner after the handler returns as well as at `http.response.start`.
+**Streaming responses are a blind spot.** Headers and the strict-mode 503 are both decided at `http.response.start`, which Starlette's `StreamingResponse` sends before the body generator runs. For `StreamingResponse`, SSE, and token-streaming endpoints, response headers and strict-mode 503s cannot report blocking that happens after the first chunk is on the wire. The log output and the console banner still report it — the monitor logs each event independently of the response, and `"warn"` and `"strict"` check again after the handler returns, which is late enough to see a stall that began mid-stream. One request prints at most one banner.
 
 Each block below is complete on its own — copy one, not all three.
 

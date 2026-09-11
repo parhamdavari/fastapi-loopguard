@@ -84,11 +84,11 @@ So for `StreamingResponse`, SSE, and token-streaming endpoints:
 - strict mode cannot 503 a response whose `200` has already shipped.
 
 Two channels still work for those routes. The monitor logs each event as it is
-detected, independently of the response. And `"warn"` and `"strict"` print the
-console banner after the handler returns as well as at `http.response.start`, which
-is late enough to see a stall that began mid-stream — at most one banner per
-request either way. Do not rely on response headers or strict mode to guard a
-streaming endpoint.
+detected, independently of the response. And `"warn"` and `"strict"` check again
+after the handler returns, which is late enough to see a stall that began
+mid-stream, so the console banner still reaches stderr — at most one banner per
+request. Do not rely on response headers or strict mode to guard a streaming
+endpoint.
 
 ---
 
