@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/loopguard-logo.webp" alt="LoopGuard" width="280" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/loopguard-logo.webp" alt="LoopGuard" width="280" />
 </p>
 
 <p align="center">
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="LoopGuard demo: a fast endpoint passes, a blocking endpoint fails with a 503, and the console banner explains why" width="800" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/demo.gif" alt="LoopGuard demo: a fast endpoint passes, a blocking endpoint fails with a 503, and the console banner explains why" width="800" />
 </p>
 
 ---
@@ -71,7 +71,7 @@ app.add_middleware(LoopGuardMiddleware, config=config)
 Returns an educational 503 page that explains what went wrong and how to fix it:
 
 <p align="center">
-  <img src="assets/error-page.gif" alt="Strict mode error page" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/error-page.gif" alt="Strict mode error page" width="600" />
 </p>
 
 ---
@@ -80,7 +80,7 @@ Returns an educational 503 page that explains what went wrong and how to fix it:
 Adds diagnostic headers to every response for debugging:
 
 <p align="center">
-  <img src="assets/error-page-screenshot-endpoint.png" alt="Warn mode headers" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/error-page-screenshot-endpoint.png" alt="Warn mode headers" width="600" />
 </p>
 
 ---
@@ -89,7 +89,7 @@ Adds diagnostic headers to every response for debugging:
 Writes structured logs listing the requests that were in flight:
 
 <p align="center">
-  <img src="assets/error-page-screenshot-console.png" alt="Console output" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/error-page-screenshot-console.png" alt="Console output" width="600" />
 </p>
 
 ---
