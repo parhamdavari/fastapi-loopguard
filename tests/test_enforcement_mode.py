@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -753,11 +754,26 @@ class TestStrictModeHeaders:
     async def test_clean_strict_response_carries_diagnostic_headers(self) -> None:
         app = self._blocking_app()
 
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test",
-        ) as client:
-            response = await client.get("/fast")
+        # This app polls on a 2ms tick with a 5ms threshold, so the whole
+        # request has to fit in ~7ms of uninterrupted loop time. A
+        # generational GC pass over this suite's heap measures 4-18ms on
+        # 3.11 under coverage, and where those passes land is a
+        # deterministic function of the session's allocation sequence --
+        # so adding a test anywhere in the suite can move one into this
+        # window and 503 a request that did nothing wrong. That is the
+        # library reporting a real stall it did not cause. Collect first,
+        # then hold the collector off; the threshold and the assertions
+        # below are unchanged.
+        gc.collect()
+        gc.disable()
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                response = await client.get("/fast")
+        finally:
+            gc.enable()
 
         assert response.status_code == 200
         assert response.headers.get("x-blocking-detected") == "false"
