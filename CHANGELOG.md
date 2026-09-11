@@ -138,6 +138,25 @@ published schema:
 
 ### Packaging
 
+- The published metadata now carries a full author name and an email
+  (`Author-email: Parham Davari <parham.davarii@gmail.com>`) instead of
+  `Author: Parham` with no address, and `[project.urls]` gained a `Changelog`
+  entry pointing at `CHANGELOG.md`. Note that `pip show` now prints an empty
+  legacy `Author:` line: a PEP 621 author with both a name and an email is
+  emitted as a single `Author-email: Name <address>` field, which is where
+  both values now live. (#71)
+- `LICENSE` now reads `Copyright (c) 2025 Parham Davari`. It carried a short
+  form of the holder's name and a year predating this repository's first
+  commit; the license terms are untouched. (#71)
+- Dropped the `License :: OSI Approved :: MIT License` classifier. PEP 639
+  deprecates license classifiers once `License-Expression` is set, and
+  `license = "MIT"` already emits `License-Expression: MIT`; nothing about the
+  license itself changed. (#71)
+- The `loopguard_threshold_ms` ini option's help text now says the value is in
+  milliseconds and is parsed as a float, and that a value `float()` cannot
+  parse fails every instrumented test. The registered type stays `string` —
+  pytest ini options have no float type, so `pytest -h` will always print
+  `(string)` and the help text has to carry the rest. (#71)
 - **Removed the `structlog` extra.** `pip install fastapi-loopguard[structlog]`
   installed `structlog` and changed nothing, because no module in `src/` imports
   it; it was also pulled in by `[all]`. Anyone depending on that extra to

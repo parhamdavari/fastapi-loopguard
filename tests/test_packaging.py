@@ -33,6 +33,33 @@ def test_version_matches_pyproject() -> None:
     assert fastapi_loopguard.__version__ == data["project"]["version"]
 
 
+def test_installed_metadata_names_an_author_and_links_the_changelog() -> None:
+    """The built package must carry an author with an email and a Changelog URL.
+
+    Reads the installed metadata, not pyproject.toml: the failure this guards
+    against is the backend never emitting the fields, which a file asserting
+    against itself cannot see. Like __version__ above, it only observes a
+    pyproject change after a fresh `pip install -e .`.
+    """
+    meta = importlib.metadata.metadata("fastapi-loopguard")
+
+    # .get(), not [...]: subscripting a missing key is deprecated and is
+    # slated to raise, which would error the test instead of failing it.
+    author = meta.get("Author-email")
+    assert author is not None, "no Author-email in the installed metadata"
+    name, _, address = author.rpartition(" ")
+    assert name.strip(), f"Author-email carries no name: {author!r}"
+    assert "@" in address, f"Author-email carries no address: {author!r}"
+
+    urls: dict[str, str] = {}
+    for entry in meta.get_all("Project-URL") or []:
+        label, _, target = str(entry).partition(", ")
+        urls[label] = target
+    assert urls.get("Changelog", "").endswith("/CHANGELOG.md"), (
+        f"no Changelog project URL; got {sorted(urls)}"
+    )
+
+
 def test_error_page_links_to_real_repo() -> None:
     """The 503 page must link to the repository that actually ships this code."""
     middleware = LoopGuardMiddleware(_dummy_app)
