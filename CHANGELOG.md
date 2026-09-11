@@ -145,6 +145,9 @@ published schema:
   legacy `Author:` line: a PEP 621 author with both a name and an email is
   emitted as a single `Author-email: Name <address>` field, which is where
   both values now live. (#71)
+- `LICENSE` now reads `Copyright (c) 2025 Parham Davari`. It carried a short
+  form of the holder's name and a year predating this repository's first
+  commit; the license terms are untouched. (#71)
 - Dropped the `License :: OSI Approved :: MIT License` classifier. PEP 639
   deprecates license classifiers once `License-Expression` is set, and
   `license = "MIT"` already emits `License-Expression: MIT`; nothing about the

@@ -33,14 +33,31 @@ def test_version_matches_pyproject() -> None:
     assert fastapi_loopguard.__version__ == data["project"]["version"]
 
 
-def test_author_and_changelog_url_are_declared() -> None:
-    """`pip show -v` must name an author with an email and link the changelog."""
-    pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
-    data = tomllib.loads(pyproject.read_text())
-    author = data["project"]["authors"][0]
-    assert author["name"].strip()
-    assert "@" in author["email"]
-    assert data["project"]["urls"]["Changelog"].endswith("/CHANGELOG.md")
+def test_installed_metadata_names_an_author_and_links_the_changelog() -> None:
+    """The built package must carry an author with an email and a Changelog URL.
+
+    Reads the installed metadata, not pyproject.toml: the failure this guards
+    against is the backend never emitting the fields, which a file asserting
+    against itself cannot see. Like __version__ above, it only observes a
+    pyproject change after a fresh `pip install -e .`.
+    """
+    meta = importlib.metadata.metadata("fastapi-loopguard")
+
+    # .get(), not [...]: subscripting a missing key is deprecated and is
+    # slated to raise, which would error the test instead of failing it.
+    author = meta.get("Author-email")
+    assert author is not None, "no Author-email in the installed metadata"
+    name, _, address = author.rpartition(" ")
+    assert name.strip(), f"Author-email carries no name: {author!r}"
+    assert "@" in address, f"Author-email carries no address: {author!r}"
+
+    urls: dict[str, str] = {}
+    for entry in meta.get_all("Project-URL") or []:
+        label, _, target = str(entry).partition(", ")
+        urls[label] = target
+    assert urls.get("Changelog", "").endswith("/CHANGELOG.md"), (
+        f"no Changelog project URL; got {sorted(urls)}"
+    )
 
 
 def test_error_page_links_to_real_repo() -> None:
