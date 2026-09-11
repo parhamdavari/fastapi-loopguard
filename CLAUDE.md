@@ -31,7 +31,7 @@ CI lints and type-checks `src/` and `tests/` only — `examples/` is unchecked a
 
 ## Tech Stack (versions verified 2026-08-11)
 
-- Python `>=3.12`; CI matrix is 3.12 and 3.13. mypy is pinned to `python_version = "3.12"` with `strict = true`.
+- Python `>=3.12`; CI matrix is 3.12, 3.13 and 3.14. mypy is pinned to `python_version = "3.12"` with `strict = true`.
 - **One runtime dependency: `starlette>=0.37.0,<1.0`.** FastAPI is a *dev* dependency — the middleware is pure ASGI and must never import `fastapi` from `src/`. Adding any runtime dependency requires asking first.
 - Extras: `prometheus` (prometheus-client), `structlog`, `all`, `dev`, `stress` (locust + uvicorn). The `structlog` extra is currently declared but unused — nothing imports structlog.
 - ruff selects `["E","F","I","N","W","UP","B","C4","SIM","ANN"]`, ignoring only `ANN401`. **`ANN` means every function needs full annotations**, tests and fixtures included. Line length 88, double quotes.
