@@ -2,8 +2,21 @@
 
 ## Unreleased
 
-No library code changed. The `evals/` benchmark and the claims it backs were
-corrected; `README.md` and `docs/AI-HARNESS.md` now quote the new figures.
+The `loopguard.json` report contract is now `schema_version` 2 and has a
+published schema:
+
+- The report carries a top-level `"status": "blocked" | "clean"`, so a
+  consuming agent reads one key instead of deriving `totals.flagged > 0`.
+  A run that instrumented no tests is `"clean"` with `totals.tests: 0`;
+  a gate that must also insist the suite was checked reads `totals.tests`
+  alongside it. The change is additive — `totals` is untouched. (#48)
+- `docs/loopguard-report.schema.json` (JSON Schema draft 2020-12) describes
+  the payload, with `additionalProperties: true` throughout because the
+  report grows by adding keys. CI validates the documented example and a
+  freshly generated report against it. (#50)
+
+The `evals/` benchmark and the claims it backs were also corrected;
+`README.md` and `docs/AI-HARNESS.md` now quote the new figures.
 
 - The scorer no longer reports an unmeasured sample as non-blocking. A
   solution that failed to import, returned empty, or was rejected before the

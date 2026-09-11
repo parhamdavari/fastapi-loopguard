@@ -53,7 +53,8 @@ pytest is already enforcing the gate.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "status": "blocked",
   "threshold_ms": 50.0,
   "totals": {"tests": 42, "flagged": 1},
   "tests": [
@@ -84,6 +85,31 @@ verdict means the loop lagged past the threshold while that test ran; the
 sentinel measures lag, not call stacks, so the culprit is in the code that
 test executed — usually the endpoint it called.
 
+### The top-level verdict
+
+`status` is the whole run in one key: `"blocked"` when at least one
+instrumented test was flagged, `"clean"` otherwise. Read it instead of
+deriving `totals.flagged > 0`; `totals` is unchanged, so consumers written
+against `schema_version` 1 keep working.
+
+A run that instrumented **no** tests reports `"status": "clean"` with
+`"totals": {"tests": 0, "flagged": 0}`. The report says what was observed,
+and nothing blocked because nothing was watched — it is not evidence that
+the suite is clean. A gate that must also insist the suite was actually
+checked (a misconfigured `asyncio_mode`, a rename that dropped every async
+test) reads `totals.tests > 0` alongside `status`.
+
+### Schema
+
+[`loopguard-report.schema.json`](loopguard-report.schema.json) is the
+JSON Schema (draft 2020-12) for the payload above. Its `$id` carries the
+`schema_version` it describes, so it changes on every bump; the file path
+stays the same and always describes the current version. Every object in
+it sets `additionalProperties: true` on purpose — the report grows by
+adding keys, so a validator must tolerate keys it does not know rather
+than reject a newer report. CI validates both this example and a freshly
+generated report against it, so the doc and the plugin cannot drift.
+
 ## Interpreting the strict 503 (runtime harness)
 
 For integration tests that drive a live app, run the middleware with
@@ -113,5 +139,7 @@ When a test fails with "Event loop blocking detected":
 
 The same gate scores whether a model writes non-blocking async code: run
 each generated solution against a functional test file plus the plugin,
-and read `totals.flagged` from the report. A ready-made task set lives in
+and read `status` (or `totals.flagged`, for a per-test count) from the
+report — checking `totals.tests > 0` first, so a solution whose tests
+never ran is not scored as clean. A ready-made task set lives in
 `evals/` at the repository root.
