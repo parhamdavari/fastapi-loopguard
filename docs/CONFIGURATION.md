@@ -57,6 +57,42 @@ config = LoopGuardConfig(
 The log line comes from the monitor and is gated on `log_blocking_events`
 (default `True`); the console banner is not.
 
+### Choose plain-text or JSON log output
+
+LoopGuard emits plain-text log lines by default. To make its events JSON for a
+log collector, configure the package logger once during application startup,
+before serving requests:
+
+```python
+from fastapi_loopguard.logging import configure_logging
+
+configure_logging(structured=True)
+```
+
+Import `configure_logging` and `StructuredFormatter` from
+`fastapi_loopguard.logging`; they are intentionally not re-exported from the
+package root. Current monitor events contain `timestamp`, `level`, `logger`,
+and `message`. The lag and in-flight request IDs are text inside `message`, not
+separate JSON fields. `StructuredFormatter` also recognizes optional
+`lag_ms`, `path`, `method`, `request_id`, and `blocking_count` attributes on
+records produced by application code.
+
+The helper configures only the `fastapi_loopguard` logger, not Uvicorn,
+FastAPI, the root logger, or application logs. It installs a handler on the
+selected stream (stderr by default), sets the package logger's level (`INFO`
+by default), and disables propagation to the root logger. Calling it again
+replaces the handler it installed earlier rather than adding another one.
+Handlers installed by application code are left in place. If the application
+already owns the handler, set `StructuredFormatter()` on that handler instead
+of calling this helper.
+
+Formatting does not change `enforcement_mode` or response headers.
+`log_blocking_events=False` still disables the event log, and setting the
+logger level above `WARNING` filters blocking warnings. In `"warn"` and
+`"strict"` modes, LoopGuard also prints a plain-text console banner directly
+to stderr. If a collector requires JSON-only LoopGuard output, use
+`enforcement_mode="log"` with structured logging.
+
 ### Strict mode fails every request in flight
 
 The sentinel measures event-loop lag, not call stacks, so it cannot name the

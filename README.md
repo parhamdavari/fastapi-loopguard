@@ -74,7 +74,9 @@ x-loopguard-warning: blocking-detected
 ```
 
 The console gets a matching banner naming the requests that were in flight
-during the stall. What happens next is up to `enforcement_mode`.
+during the stall. What happens next is up to `enforcement_mode`. Log records
+are plain text by default; see [structured JSON logging](docs/CONFIGURATION.md#choose-plain-text-or-json-log-output)
+to configure collector-friendly output.
 
 ### Blocking calls, and what to write instead
 
@@ -140,7 +142,9 @@ Adds diagnostic headers to every response for debugging:
 ---
 
 ### Log Mode
-Writes structured logs listing the requests that were in flight:
+Writes warning logs listing the requests that were in flight. Output is plain
+text by default; [structured JSON logging](docs/CONFIGURATION.md#choose-plain-text-or-json-log-output)
+is opt-in:
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/error-page-screenshot-console.png" alt="Console output" width="600" />
