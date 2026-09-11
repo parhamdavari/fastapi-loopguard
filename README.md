@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/loopguard-logo.webp" alt="LoopGuard" width="280" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/loopguard-logo.webp" alt="LoopGuard" width="280" />
 </p>
 
 <p align="center">
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="LoopGuard demo: a fast endpoint passes, a blocking endpoint fails with a 503, and the console banner explains why" width="800" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/demo.gif" alt="LoopGuard demo: a fast endpoint passes, a blocking endpoint fails with a 503, and the console banner explains why" width="800" />
 </p>
 
 ---
@@ -29,12 +29,66 @@ pip install fastapi-loopguard
 ## Quick Start
 
 ```python
+# app.py
+import asyncio
+import time
+
 from fastapi import FastAPI
 from fastapi_loopguard import LoopGuardMiddleware
 
 app = FastAPI()
 app.add_middleware(LoopGuardMiddleware)
+
+
+@app.get("/slow")
+async def slow():
+    time.sleep(0.5)            # blocking call inside async def: freezes the loop
+    await asyncio.sleep(0.05)  # stands in for a real await (DB, HTTP, ...)
+    return {"status": "ok"}
 ```
+
+Serve it with whatever ASGI server you already use — `uvicorn` is the usual one
+for FastAPI (`pip install uvicorn`, or `pip install "fastapi[standard]"`).
+LoopGuard does not depend on it.
+
+```bash
+uvicorn app:app --reload
+```
+
+The default mode is `warn`, so the request still succeeds and the diagnostic
+headers say what the loop did:
+
+```console
+$ curl -i http://127.0.0.1:8000/slow
+HTTP/1.1 200 OK
+server: uvicorn
+content-length: 15
+content-type: application/json
+x-request-id: 59cb0aa5
+x-blocking-count: 1
+x-blocking-total-ms: 498.40
+x-blocking-detected: true
+x-loopguard-warning: blocking-detected
+
+{"status":"ok"}
+```
+
+The console gets a matching banner naming the requests that were in flight
+during the stall. What happens next is up to `enforcement_mode`.
+
+### Blocking calls, and what to write instead
+
+```python
+time.sleep(1)                        # -> await asyncio.sleep(1)
+requests.get(url)                    # -> await httpx.AsyncClient().get(url)
+open(path).read()                    # -> await asyncio.to_thread(Path(path).read_text)
+client.chat.completions.create(...)  # -> await AsyncOpenAI().chat.completions.create(...)
+tokenizer.encode(text)               # -> await asyncio.to_thread(tokenizer.encode, text)
+```
+
+The last two are the ones that catch AI services out: the sync OpenAI client and
+a CPU-bound tokenizer both look like ordinary calls and both stop every other
+request on the worker until they return.
 
 ## Enforcement Modes
 
@@ -71,7 +125,7 @@ app.add_middleware(LoopGuardMiddleware, config=config)
 Returns an educational 503 page that explains what went wrong and how to fix it:
 
 <p align="center">
-  <img src="assets/error-page.gif" alt="Strict mode error page" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/error-page.gif" alt="Strict mode error page" width="600" />
 </p>
 
 ---
@@ -80,7 +134,7 @@ Returns an educational 503 page that explains what went wrong and how to fix it:
 Adds diagnostic headers to every response for debugging:
 
 <p align="center">
-  <img src="assets/error-page-screenshot-endpoint.png" alt="Warn mode headers" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/error-page-screenshot-endpoint.png" alt="Warn mode headers" width="600" />
 </p>
 
 ---
@@ -89,7 +143,7 @@ Adds diagnostic headers to every response for debugging:
 Writes structured logs listing the requests that were in flight:
 
 <p align="center">
-  <img src="assets/error-page-screenshot-console.png" alt="Console output" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/error-page-screenshot-console.png" alt="Console output" width="600" />
 </p>
 
 ---
@@ -105,7 +159,16 @@ loopguard_all_async = true          # every async test fails on blocking
 loopguard_report = loopguard.json   # verdicts + fix hints for the agent
 ```
 
-See [docs/AI-HARNESS.md](docs/AI-HARNESS.md) for the report schema, the `no_blocking` / `allow_blocking` markers, and a drop-in snippet for your project's agent instructions.
+The plugin ships inside the package and auto-registers through pytest's `pytest11` entry point — nothing to add to `conftest.py` — and stays inert until you opt in with `loopguard_all_async` or a per-test `@pytest.mark.no_blocking`; [docs/AI-HARNESS.md](docs/AI-HARNESS.md) has the full option list, the report schema, the `allow_blocking` opt-out, and a drop-in snippet for your project's agent instructions.
+
+## Known limitations
+
+Two are worth knowing before you wire this into anything:
+
+- **Streaming responses are a blind spot.** Headers and the strict-mode 503 are decided before a `StreamingResponse` body runs, so blocking after the first chunk never reaches the response — see [Enforcement Modes](#enforcement-modes) above. `enforcement_mode="log"` still reports it.
+- **Strict mode 503s every request that was in flight**, not only the one that blocked — see [Enforcement Modes](#enforcement-modes) above. That is why it is opt-in.
+
+[`FINDINGS.md`](FINDINGS.md) is the full list, including the design tensions deferred from the 0.5 and 0.6 correctness passes.
 
 ---
 

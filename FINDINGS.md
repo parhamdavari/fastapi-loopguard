@@ -3,6 +3,10 @@
 Everything noticed while fixing the 0.5 correctness defects (and the 0.6
 hardening pass) but deliberately left alone. Each item is its own future task.
 
+Linked from the README, so it is checked against the code rather than left to
+rot: every item below was re-verified on 2026-09-11. Items that have since been
+fixed are struck through with a note, not deleted.
+
 ## Detection design
 
 1. ~~**Sub-threshold noise can still inflate the adaptive threshold.**~~
@@ -45,8 +49,9 @@ hardening pass) but deliberately left alone. Each item is its own future task.
 7. **The package could be zero-dependency.**
    `middleware.py` imports only type aliases from `starlette.types`; moving
    that import under `TYPE_CHECKING` removes the runtime dependency entirely
-   (works on Litestar, Quart, Django ASGI, ...). Also, the `<1.0` upper bound
-   on starlette will block installs the day Starlette 1.0 ships.
+   (works on Litestar, Quart, Django ASGI, ...). ~~Also, the `<1.0` upper bound
+   on starlette will block installs the day Starlette 1.0 ships.~~ — the bound
+   was widened to `<2.0` in #4; the `TYPE_CHECKING` move is still open.
 
 8. **`get_current_request()` returns an arbitrary active context.**
    A backward-compat shim that silently gives wrong answers under concurrency.
