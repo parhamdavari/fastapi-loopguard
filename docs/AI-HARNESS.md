@@ -49,6 +49,57 @@ exist as CLI flags: `--loopguard-all-async`, `--loopguard-report=PATH`.
 Exit semantics are plain pytest: flagged tests fail, so any CI that runs
 pytest is already enforcing the gate.
 
+## The `loopguard` command
+
+Installing the package also installs a `loopguard` console script, for an
+agent or a CI step that wants the verdict without parsing JSON itself.
+This is the pair of commands to put in a CI config:
+
+```bash
+pytest --loopguard-all-async --loopguard-report=loopguard.json
+loopguard report loopguard.json
+```
+
+A clean run prints one line:
+
+```
+loopguard: clean  tests=42  flagged=0  threshold=50.0ms
+```
+
+A blocked run adds one line per flagged test, with its node id and the
+worst lag measured while it ran:
+
+```
+loopguard: blocked  tests=42  flagged=2  threshold=50.0ms
+  blocked tests/test_api.py::test_upload  worst_lag=180.24ms
+  blocked tests/test_api.py::test_render  worst_lag=95.0ms
+```
+
+Exit codes follow the ruff/pyright convention, and are also in
+`loopguard report --help`:
+
+| Code | Meaning |
+|------|---------|
+| `0` | clean — no blocking detected in the report |
+| `1` | blocking detected |
+| `2` | the report is missing, unreadable, or malformed |
+
+Exit 2 is a tool failure, kept distinct from a verdict on purpose: a
+typo'd path, a truncated file, or a report carrying neither `status` nor
+`totals` must not read as "clean". It prints one line to stderr and
+nothing to stdout. `--quiet` suppresses the summary and communicates
+through the exit code alone; it still reports a malformed report on
+stderr.
+
+The verdict comes from the top-level `status` key. A report without one
+is a `schema_version` 1 report, and falls back to `totals.flagged > 0`,
+so a report written by an older version of the plugin still gates. The
+command reads only those keys — it does not validate against the JSON
+Schema below, which would need `jsonschema`, a dev-only dependency.
+
+`loopguard` with no subcommand prints usage and exits 0; an unknown
+subcommand exits 2.
+
 ## The report
 
 ```json

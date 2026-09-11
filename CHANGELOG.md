@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Command-line interface
+
+- **New `loopguard` console script.** `loopguard report loopguard.json`
+  reads a report the pytest plugin wrote, prints a one-line summary plus a
+  line per flagged test, and exits `0` when clean, `1` when blocking was
+  detected, `2` when the report is missing, unreadable, or malformed — the
+  ruff/pyright convention. It lets an agent or a CI step enforce the gate
+  outside pytest, without parsing JSON itself. The verdict comes from the
+  top-level `status` key, falling back to `totals.flagged > 0` for a
+  `schema_version` 1 report. `--quiet` gives the exit code alone.
+  `docs/AI-HARNESS.md` documents the exit codes and the CI invocation.
+  No new dependency: `cli.py` is standard-library-only and, deliberately,
+  never imports `pytest_plugin` — that module imports `pytest`, which a
+  production install does not have. (#49)
+
 ### Report contract
 
 The `loopguard.json` report contract is now `schema_version` 2 and has a

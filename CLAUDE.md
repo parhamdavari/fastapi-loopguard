@@ -49,9 +49,12 @@ src/fastapi_loopguard/
   logging.py        StructuredFormatter (JSON), configure_logging, log_blocking_event
   metrics.py        optional Prometheus LoopGuardMetrics (see Known Gaps — not wired in)
   pytest_plugin.py  pytest11 entry point, @pytest.mark.no_blocking, BlockingDetector
+  cli.py            `loopguard` console script — `loopguard report PATH`, exit 0/1/2
 ```
 
-**Layering (strict — a module imports only lower layers):** `config`, `context` → `monitor` → `middleware`. `logging`, `metrics`, and `pytest_plugin` are leaves; nothing on the detection path imports them, and they must not import `middleware`. `middleware.py` imports `LoopGuardConfig` inside `__init__` with an "avoid circular imports" comment — the cycle no longer exists, but the deferred import is harmless and not worth churning.
+**Layering (strict — a module imports only lower layers):** `config`, `context` → `monitor` → `middleware`. `logging`, `metrics`, `pytest_plugin`, and `cli` are leaves; nothing on the detection path imports them, and they must not import `middleware`.
+
+`cli.py` is the strictest leaf: it imports **only the standard library**. In particular it must never import `fastapi_loopguard.pytest_plugin`, which imports `pytest` — a dev dependency the console script's users will not have. It consumes the report as data against `docs/loopguard-report.schema.json` rather than importing the writer, and it does not validate against that schema at runtime (that needs `jsonschema`, also dev-only). `tests/test_cli.py` enforces both: an AST check on the import list and a subprocess import with `pytest` absent. `middleware.py` imports `LoopGuardConfig` inside `__init__` with an "avoid circular imports" comment — the cycle no longer exists, but the deferred import is harmless and not worth churning.
 
 `pytest_plugin.py` is registered as a `pytest11` entry point, so it auto-loads for **every** project that installs this package. Treat its hooks as public API and keep them cheap and side-effect-free for unmarked tests.
 
