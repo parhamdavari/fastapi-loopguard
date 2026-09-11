@@ -41,8 +41,10 @@ app.add_middleware(LoopGuardMiddleware)
 | Mode | Behavior | `x-blocking-*` headers | Use Case |
 |------|----------|------------------------|----------|
 | `"warn"` | Console warnings | Yes, by default | **Default** |
-| `"strict"` | HTTP 503 + error page | Yes, by default | Development / CI |
+| `"strict"` | HTTP 503 + error page | Yes, by default\* | Development / CI |
 | `"log"` | Silent logging | Only with `dev_mode=True` | Production |
+
+\* The 503 itself carries a different set: `x-request-id`, `x-blocking-count`, `x-blocking-total-ms` and `x-loopguard-enforcement: strict`, but **no** `x-blocking-detected`. Strict mode's pass-through responses (no blocking seen) do carry it.
 
 **Strict mode 503s every request that was in flight during the stall, not just the one that blocked.** The sentinel measures event-loop lag, so it cannot name the guilty handler. With 100 concurrent requests and one of them blocking, the other 99 also get a 503 — same body, same `x-blocking-total-ms`. That is why strict mode is opt-in, and why `dev_mode` cannot switch it on.
 
