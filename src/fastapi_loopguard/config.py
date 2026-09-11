@@ -10,12 +10,18 @@ class LoopGuardConfig:
     Attributes:
         enabled: Whether monitoring is active. Set False to disable entirely.
         monitor_interval_ms: How often the sentinel checks for blocking (milliseconds).
-            Default 10ms detects blocking >50ms with ~0.002% CPU overhead.
-            The sleep is non-blocking (cooperative), so it doesn't affect throughput.
+            The mechanism is one cooperative `asyncio.sleep()` per interval plus a
+            timestamp comparison when it resumes, so the sentinel never blocks the
+            loop itself; halving the interval doubles that wake-up rate. Lag shorter
+            than the interval cannot be resolved, which is why
+            `fallback_threshold_ms` must be at least this value.
         threshold_multiplier: Blocking detected when lag > baseline × multiplier.
         calibration_iterations: Number of samples during startup calibration.
         fallback_threshold_ms: Used if calibration produces unreliable results.
-        dev_mode: Enable response headers with lag information.
+        dev_mode: Adds the `x-blocking-*` response headers when
+            `enforcement_mode` is `"log"`. In `"warn"` and `"strict"` those
+            headers are already sent regardless of this flag, so it has no
+            effect there. It never changes the enforcement mode.
         log_blocking_events: Log when blocking is detected.
         prometheus_enabled: Expose Prometheus metrics.
         adaptive_threshold: Enable adaptive threshold based on sliding window.
