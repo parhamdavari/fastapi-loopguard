@@ -33,7 +33,7 @@ CI lints and type-checks `src/` and `tests/` only — `examples/` is unchecked a
 
 - Python `>=3.12`; CI matrix is 3.12, 3.13 and 3.14. mypy is pinned to `python_version = "3.12"` with `strict = true`.
 - **One runtime dependency: `starlette>=0.37.0,<1.0`.** FastAPI is a *dev* dependency — the middleware is pure ASGI and must never import `fastapi` from `src/`. Adding any runtime dependency requires asking first.
-- Extras: `prometheus` (prometheus-client), `structlog`, `all`, `dev`, `stress` (locust + uvicorn). The `structlog` extra is currently declared but unused — nothing imports structlog.
+- Extras: `prometheus` (prometheus-client), `all`, `dev`, `stress` (locust + uvicorn). Every extra must make an observable difference once installed — a declared-but-unused `structlog` extra was removed for that reason, and adding an extra nothing imports is the same defect.
 - ruff selects `["E","F","I","N","W","UP","B","C4","SIM","ANN"]`, ignoring only `ANN401`. **`ANN` means every function needs full annotations**, tests and fixtures included. Line length 88, double quotes.
 - Build backend is hatchling; wheel packages `src/fastapi_loopguard`. Publishing triggers on a `v*` tag via PyPI trusted publishing (OIDC) — there is **no version-bump automation**, so `pyproject.toml` must be bumped by hand. `__init__.__version__` is derived from installed package metadata; after bumping, re-run `pip install -e .` or the version tests fail against stale metadata.
 - `.claude/` is git-ignored and excluded from the sdist. Committing anything there needs an explicit `.gitignore` negation.

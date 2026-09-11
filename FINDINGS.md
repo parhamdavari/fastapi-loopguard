@@ -69,8 +69,8 @@ hardening pass) but deliberately left alone. Each item is its own future task.
 13. ~~**`_handle_lifespan` locals `started` / `shutdown_complete` are
     write-only.**~~ — removed in the 0.6 pass.
 
-14. **The `structlog` extra is declared but nothing imports structlog**
-    (already noted in CLAUDE.md).
+14. ~~**The `structlog` extra is declared but nothing imports structlog**~~ —
+    the extra was removed rather than wired in (#51).
 
 ## Repro caveat worth keeping
 

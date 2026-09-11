@@ -41,11 +41,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Every extra must make an observable difference once installed:
+#   prometheus -> metrics.py wires up LoopGuardMetrics
+#   dev        -> the test, lint and type-check toolchain
+#   stress     -> examples/ needs a server and a load generator
+#   all        -> alias for every optional runtime feature
 prometheus = ["prometheus-client>=0.19.0"]
-structlog = ["structlog>=24.1.0"]
 all = [
     "prometheus-client>=0.19.0",
-    "structlog>=24.1.0",
 ]
 dev = [
     "pytest>=8.0.0",
