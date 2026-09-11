@@ -17,6 +17,14 @@ can repair from this report alone is untested and tracked in
 
 ## Quick start
 
+Async tests need an async pytest plugin — `asyncio_mode = auto` is a
+`pytest-asyncio` option, so install it first (`anyio`'s pytest plugin
+works too):
+
+```bash
+pip install pytest-asyncio
+```
+
 `loopguard_all_async` turns every async test into a blocking gate,
 `loopguard_report` writes verdicts to a file for the agent to read, and
 `loopguard_threshold_ms` sets the lag threshold. Comments on the same
@@ -88,7 +96,7 @@ Exit codes follow the ruff/pyright convention, and are also in
 |------|---------|
 | `0` | clean — no blocking detected in the report |
 | `1` | blocking detected |
-| `2` | the report is missing, unreadable, or malformed |
+| `2` | the report is missing, unreadable, or malformed, or the run instrumented zero tests |
 
 Exit 2 is a tool failure, kept distinct from a verdict on purpose: a
 typo'd path, a truncated file, or a report carrying neither `status` nor
@@ -96,6 +104,15 @@ typo'd path, a truncated file, or a report carrying neither `status` nor
 nothing to stdout. `--quiet` suppresses the summary and communicates
 through the exit code alone; it still reports a malformed report on
 stderr.
+
+**A clean report that instrumented zero tests also exits 2, not 0.**
+`asyncio_mode` misconfigured, `pytest-asyncio` not installed, or a rename
+that dropped every async test all produce a `"clean"` report with
+`totals.tests: 0` — a run that tested nothing, not a run that proved
+anything. `loopguard report` treats that as a setup failure by default
+and prints a one-line warning to stderr alongside the usual summary. Pass
+`--allow-empty` for the rare case where zero tests is expected (e.g. a
+project with no async endpoints yet) to get exit 0 back.
 
 The verdict comes from the top-level `status` key. A report without one
 is a `schema_version` 1 report, and falls back to `totals.flagged > 0`,

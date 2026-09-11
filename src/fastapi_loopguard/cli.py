@@ -35,8 +35,15 @@ _EXIT_CODES = """\
 exit codes:
   0  clean - no blocking detected in the report
   1  blocking detected
-  2  the report is missing, unreadable, or malformed
+  2  the report is missing, unreadable, or malformed, or a clean report
+     that instrumented zero tests (see --allow-empty)
 """
+
+_EMPTY_RUN_WARNING = (
+    "loopguard: this run instrumented 0 tests - a clean verdict from an "
+    "empty run is not evidence the suite is clean (pass --allow-empty to "
+    "accept it anyway)"
+)
 
 _VALID_STATUS = ("blocked", "clean")
 
@@ -102,6 +109,15 @@ def _count(value: Any) -> str:
     return str(value) if _is_number(value) else "unknown"
 
 
+def _tests_count(report: dict[str, Any]) -> int | None:
+    """The report's `totals.tests`, or None when absent or not a number."""
+    totals = report.get("totals")
+    if not isinstance(totals, dict):
+        return None
+    count = totals.get("tests")
+    return int(count) if _is_number(count) else None
+
+
 def _summary_line(report: dict[str, Any], blocked: bool) -> str:
     totals = report.get("totals")
     totals = totals if isinstance(totals, dict) else {}
@@ -165,6 +181,15 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print nothing; communicate through the exit code only",
     )
+    report.add_argument(
+        "--allow-empty",
+        action="store_true",
+        dest="allow_empty",
+        help=(
+            "accept a clean report that instrumented zero tests as exit 0 "
+            "instead of the default exit 2"
+        ),
+    )
     return parser
 
 
@@ -190,7 +215,18 @@ def main(argv: list[str] | None = None) -> int:
         for line in _flagged_lines(report):
             print(line)
 
-    return EXIT_BLOCKED if blocked else EXIT_CLEAN
+    if blocked:
+        return EXIT_BLOCKED
+
+    # A clean verdict from a run that instrumented zero tests is not
+    # evidence the suite is clean — it is a setup failure (misconfigured
+    # asyncio_mode, a rename that dropped every async test, pytest-asyncio
+    # missing). Fail closed by default; --allow-empty opts back in.
+    if _tests_count(report) == 0 and not args.allow_empty:
+        print(_EMPTY_RUN_WARNING, file=sys.stderr)
+        return EXIT_ERROR
+
+    return EXIT_CLEAN
 
 
 if __name__ == "__main__":  # pragma: no cover

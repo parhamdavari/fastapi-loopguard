@@ -16,6 +16,14 @@
   No new dependency: `cli.py` is standard-library-only and, deliberately,
   never imports `pytest_plugin` — that module imports `pytest`, which a
   production install does not have. (#49)
+- **`loopguard report` now exits `2`, not `0`, for a clean report that
+  instrumented zero tests.** A misconfigured `asyncio_mode`, a missing
+  `pytest-asyncio` install, or a rename that dropped every async test all
+  produce `{"status": "clean", "totals": {"tests": 0, ...}}` — a run that
+  tested nothing, previously read as a passing gate. The CLI now treats
+  that as a setup failure by default and prints a one-line warning to
+  stderr; pass `--allow-empty` to keep the old exit-`0` behavior for the
+  cases where zero tests is genuinely expected.
 
 ### Report contract
 
