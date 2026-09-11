@@ -93,8 +93,12 @@ class TestCleanReport:
             "loopguard: clean  tests=3  flagged=0  threshold=50.0ms"
         ]
 
-    def test_zero_tests_is_clean(self, tmp_path: Path) -> None:
-        """A run that instrumented nothing is clean, per the report contract."""
+    def test_zero_tests_is_clean_in_the_report_contract(self, tmp_path: Path) -> None:
+        """The report itself says clean; --allow-empty accepts it as exit 0.
+
+        Without --allow-empty the CLI treats this as a setup failure — see
+        TestEmptyRun below.
+        """
         report = {
             "schema_version": 2,
             "status": "clean",
@@ -102,7 +106,93 @@ class TestCleanReport:
             "totals": {"tests": 0, "flagged": 0},
             "tests": [],
         }
-        assert main(["report", _write(tmp_path, report)]) == EXIT_CLEAN
+        path = _write(tmp_path, report)
+        assert main(["report", path, "--allow-empty"]) == EXIT_CLEAN
+
+
+class TestEmptyRun:
+    """A clean verdict from a run that instrumented zero tests is not
+    evidence the suite is clean — the gate must fail closed by default."""
+
+    _ZERO_TESTS_REPORT: dict[str, Any] = {
+        "schema_version": 2,
+        "status": "clean",
+        "threshold_ms": 50.0,
+        "totals": {"tests": 0, "flagged": 0},
+        "tests": [],
+    }
+
+    def test_zero_tests_clean_exits_two_by_default(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = _write(tmp_path, self._ZERO_TESTS_REPORT)
+        assert main(["report", path]) == EXIT_ERROR
+
+        captured = capsys.readouterr()
+        assert "loopguard: clean  tests=0  flagged=0" in captured.out
+        assert "0 tests" in captured.err
+        assert "--allow-empty" in captured.err
+
+    def test_zero_tests_clean_with_allow_empty_exits_zero(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = _write(tmp_path, self._ZERO_TESTS_REPORT)
+        assert main(["report", path, "--allow-empty"]) == EXIT_CLEAN
+
+        captured = capsys.readouterr()
+        assert "loopguard: clean  tests=0  flagged=0" in captured.out
+        assert captured.err == ""
+
+    def test_zero_tests_but_flagged_is_still_blocked(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A pathological report (flagged > 0, tests == 0) is a verdict,
+        not an empty run — it must not fall into the --allow-empty path."""
+        report = {
+            "status": "blocked",
+            "threshold_ms": 50.0,
+            "totals": {"tests": 0, "flagged": 1},
+            "tests": [],
+        }
+        path = _write(tmp_path, report)
+        assert main(["report", path]) == EXIT_BLOCKED
+        assert capsys.readouterr().err == ""
+
+    def test_quiet_still_warns_on_stderr_for_an_empty_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--quiet silences stdout, not the setup-failure warning."""
+        path = _write(tmp_path, self._ZERO_TESTS_REPORT)
+        assert main(["report", path, "--quiet"]) == EXIT_ERROR
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "--allow-empty" in captured.err
+
+    def test_no_totals_at_all_is_not_treated_as_an_empty_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A `status`-only report has no `totals.tests` to be zero, so the
+        empty-run gate must not fire — the count is unknown, not zero."""
+        path = _write(tmp_path, {"status": "clean"})
+        assert main(["report", path]) == EXIT_CLEAN
+
+        captured = capsys.readouterr()
+        assert "loopguard: clean  tests=unknown  flagged=unknown" in captured.out
+        assert captured.err == ""
+
+    def test_v1_totals_without_a_tests_key_is_not_an_empty_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A schema_version 1 report can carry `totals` without a `tests`
+        key; that is also an unknown count, not a zero one."""
+        report = {"schema_version": 1, "totals": {"flagged": 0}}
+        path = _write(tmp_path, report)
+        assert main(["report", path]) == EXIT_CLEAN
+
+        captured = capsys.readouterr()
+        assert "loopguard: clean  tests=unknown  flagged=0" in captured.out
+        assert captured.err == ""
 
 
 class TestBlockedReport:
@@ -317,7 +407,10 @@ class TestUsage:
         with pytest.raises(SystemExit) as excinfo:
             main(["report", "--help"])
         assert excinfo.value.code == EXIT_CLEAN
-        assert "exit codes:" in capsys.readouterr().out
+
+        out = capsys.readouterr().out
+        assert "exit codes:" in out
+        assert "--allow-empty" in out
 
     def test_unknown_subcommand_exits_two(self) -> None:
         with pytest.raises(SystemExit) as excinfo:
