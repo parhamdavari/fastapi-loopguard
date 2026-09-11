@@ -57,6 +57,7 @@ dev = [
     "mypy>=1.8.0",
     "ruff>=0.3.0",
     "coverage>=7.4.0",
+    "jsonschema>=4.21.0",
 ]
 stress = [
     "locust>=2.20.0",

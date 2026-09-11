@@ -99,6 +99,17 @@ the suite is clean. A gate that must also insist the suite was actually
 checked (a misconfigured `asyncio_mode`, a rename that dropped every async
 test) reads `totals.tests > 0` alongside `status`.
 
+### Schema
+
+[`loopguard-report.schema.json`](loopguard-report.schema.json) is the
+JSON Schema (draft 2020-12) for the payload above. Its `$id` carries the
+`schema_version` it describes, so it changes on every bump; the file path
+stays the same and always describes the current version. Every object in
+it sets `additionalProperties: true` on purpose — the report grows by
+adding keys, so a validator must tolerate keys it does not know rather
+than reject a newer report. CI validates both this example and a freshly
+generated report against it, so the doc and the plugin cannot drift.
+
 ## Interpreting the strict 503 (runtime harness)
 
 For integration tests that drive a live app, run the middleware with

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/parhamdavari/fastapi-loopguard/schemas/loopguard-report/v2.json",
+  "title": "LoopGuard pytest report",
+  "description": "The loopguard.json report written by the fastapi-loopguard pytest plugin when loopguard_report (ini) or --loopguard-report=PATH is set. This schema describes schema_version 2. The report contract is additive: every object here permits unknown properties so a consumer written against an older version keeps validating newer reports.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "status", "threshold_ms", "totals", "tests"],
+  "properties": {
+    "schema_version": {
+      "description": "Version of this report contract. Bumped whenever the shape changes; the $id of the matching schema carries the same number.",
+      "const": 2
+    },
+    "status": {
+      "description": "The run's single top-level verdict. \"blocked\" when at least one instrumented test was flagged (totals.flagged > 0), \"clean\" otherwise. A run that instrumented no tests is \"clean\" with totals.tests == 0 — nothing blocked because nothing was watched; a gate that must also insist the suite was checked reads totals.tests > 0 as well.",
+      "type": "string",
+      "enum": ["blocked", "clean"]
+    },
+    "threshold_ms": {
+      "description": "Loop lag, in milliseconds, beyond which a test is flagged (loopguard_threshold_ms).",
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "totals": {
+      "description": "Counts over the instrumented tests only.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["tests", "flagged"],
+      "properties": {
+        "tests": {
+          "description": "Number of instrumented tests in this run. Tests the plugin did not wrap (sync tests, unmarked tests outside all-async mode, tests carrying @pytest.mark.allow_blocking) are absent from the report entirely.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "flagged": {
+          "description": "Number of instrumented tests whose verdict is \"blocked\".",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "tests": {
+      "description": "One entry per instrumented test, in completion order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/testRecord"
+      }
+    }
+  },
+  "$defs": {
+    "testRecord": {
+      "title": "Per-test verdict",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["nodeid", "verdict", "events", "hints"],
+      "properties": {
+        "nodeid": {
+          "description": "The pytest node id of the instrumented test.",
+          "type": "string",
+          "minLength": 1
+        },
+        "verdict": {
+          "description": "\"blocked\" when the loop lagged past the threshold while this test ran, \"clean\" otherwise.",
+          "type": "string",
+          "enum": ["blocked", "clean"]
+        },
+        "events": {
+          "description": "Measured blocking events for this test; empty for a clean verdict. The sentinel measures loop lag, not call stacks, so an event locates the stall in time, not in a call site.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/blockingEvent"
+          }
+        },
+        "hints": {
+          "description": "Suggested sync-to-async rewrites, included with every \"blocked\" verdict so an agent can act without extra context. Empty for a clean verdict.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "blockingEvent": {
+      "title": "Blocking event",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["lag_ms", "threshold_ms"],
+      "properties": {
+        "lag_ms": {
+          "description": "Measured event-loop lag in milliseconds, rounded to two decimals.",
+          "type": "number"
+        },
+        "threshold_ms": {
+          "description": "Threshold this event was measured against, in milliseconds.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  }
+}

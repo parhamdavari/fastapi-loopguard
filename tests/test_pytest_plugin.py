@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
+from pathlib import Path
 from typing import Any
 
+import jsonschema
 import pytest
 
 # Enable pytester fixture for plugin integration tests
@@ -16,6 +19,10 @@ from fastapi_loopguard.pytest_plugin import (  # noqa: E402
     REPORT_SCHEMA_VERSION,
     BlockingDetector,
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_DOC_PATH = _REPO_ROOT / "docs" / "AI-HARNESS.md"
+_SCHEMA_PATH = _REPO_ROOT / "docs" / "loopguard-report.schema.json"
 
 
 class TestBlockingDetector:
@@ -635,6 +642,97 @@ class TestReportStatus:
         assert report["status"] == "clean"
         assert report["totals"] == {"tests": 0, "flagged": 0}
         assert report["tests"] == []
+
+
+def _schema() -> dict[str, Any]:
+    parsed: dict[str, Any] = json.loads(_SCHEMA_PATH.read_text())
+    return parsed
+
+
+def _doc_example_report() -> dict[str, Any]:
+    """The one report payload in docs/AI-HARNESS.md, parsed."""
+    blocks = re.findall(r"```json\n(.*?)```", _DOC_PATH.read_text(), re.DOTALL)
+    reports = [
+        parsed
+        for parsed in (json.loads(block) for block in blocks)
+        if isinstance(parsed, dict) and "schema_version" in parsed
+    ]
+    assert len(reports) == 1, (
+        f"expected exactly one report payload in {_DOC_PATH.name}, found {len(reports)}"
+    )
+    example: dict[str, Any] = reports[0]
+    return example
+
+
+class TestReportSchema:
+    """docs/loopguard-report.schema.json is the contract; keep it honest."""
+
+    def test_schema_is_a_valid_draft_2020_12_schema(self) -> None:
+        schema = _schema()
+        assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+        jsonschema.Draft202012Validator.check_schema(schema)
+
+    def test_schema_id_and_version_track_the_plugin(self) -> None:
+        """The described version, the $id, and the plugin must agree."""
+        schema = _schema()
+        assert schema["properties"]["schema_version"]["const"] == REPORT_SCHEMA_VERSION
+        assert schema["$id"].endswith(f"/v{REPORT_SCHEMA_VERSION}.json")
+
+    def test_schema_validates_the_documented_example(self) -> None:
+        """The doc payload and the schema cannot drift apart."""
+        jsonschema.Draft202012Validator(_schema()).validate(_doc_example_report())
+
+    def test_documented_example_matches_the_plugin_version(self) -> None:
+        assert _doc_example_report()["schema_version"] == REPORT_SCHEMA_VERSION
+
+    def test_schema_validates_a_freshly_generated_report(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """A shape change in the plugin that the schema misses fails CI."""
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking
+            async def test_blocks():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+
+            @pytest.mark.no_blocking
+            async def test_clean():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("--loopguard-report=loopguard.json")
+        result.assert_outcomes(failed=1, passed=1)
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        jsonschema.Draft202012Validator(_schema()).validate(report)
+        # The generated report exercises both verdicts and a real event
+        assert {r["verdict"] for r in report["tests"]} == {"blocked", "clean"}
+
+    def test_schema_requires_the_top_level_status(self) -> None:
+        """The schema has teeth: a pre-status report no longer validates."""
+        report = _doc_example_report()
+        del report["status"]
+
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.Draft202012Validator(_schema()).validate(report)
+
+    def test_schema_tolerates_unknown_keys(self) -> None:
+        """The contract is additive, so validators must not reject new keys."""
+        report = _doc_example_report()
+        report["some_future_key"] = {"nested": True}
+        report["tests"][0]["some_future_key"] = 1
+
+        jsonschema.Draft202012Validator(_schema()).validate(report)
 
 
 class TestDetectorArmedBeforeTestBody:
