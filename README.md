@@ -152,11 +152,12 @@ Writes structured logs listing the requests that were in flight:
 
 Measured, not assumed: asked for ordinary endpoints with no warning, every one of seven benchmarked models blocked the event loop — 60 of 233 measured samples, GPT-4.1 in 21 of 37 ([benchmark](evals/README.md#results), N=5 per task, 2026-08). Adding one sentence — "the endpoint must not block the event loop" — removed every blocking verdict: 0 of 222. The bundled pytest plugin is that sentence, enforced. It turns blocking into a red test and a machine-readable report the agent can fix from, with no per-test annotations.
 
-Async tests need `pytest-asyncio` (or `anyio`'s pytest plugin) installed — `pip install pytest-asyncio`. `loopguard_all_async` makes every async test fail on blocking; `loopguard_report` writes verdicts and fix hints for the agent to `loopguard.json`:
+Async tests need `pytest-asyncio` (or `anyio`'s pytest plugin) installed — `pip install pytest-asyncio` — with `asyncio_mode = auto` set, since pytest-asyncio's default strict mode errors on plain `async def` tests. `loopguard_all_async` makes every async test fail on blocking; `loopguard_report` writes verdicts and fix hints for the agent to `loopguard.json`:
 
 ```ini
 # pytest.ini
 [pytest]
+asyncio_mode = auto
 loopguard_all_async = true
 loopguard_report = loopguard.json
 ```
