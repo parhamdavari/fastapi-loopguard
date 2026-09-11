@@ -2,7 +2,7 @@
 
 ## 0.7.0 (2026-09-11)
 
-Two security fixes, a detection miss that made the most common shape of
+Three security fixes, a detection miss that made the most common shape of
 blocking code invisible, and a `loopguard` console script for enforcing the
 gate outside pytest.
 
