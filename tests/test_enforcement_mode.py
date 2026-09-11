@@ -10,7 +10,11 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from fastapi_loopguard import LoopGuardConfig, LoopGuardMiddleware
+from fastapi_loopguard import (
+    EnforcementMode,
+    LoopGuardConfig,
+    LoopGuardMiddleware,
+)
 from fastapi_loopguard.context import get_active_requests, get_registry
 
 if TYPE_CHECKING:
@@ -37,7 +41,8 @@ class TestEnforcementModeConfig:
 
     def test_valid_enforcement_modes(self) -> None:
         """Test that all valid enforcement modes are accepted."""
-        for mode in ["log", "warn", "strict"]:
+        modes: tuple[EnforcementMode, ...] = ("log", "warn", "strict")
+        for mode in modes:
             config = LoopGuardConfig(enforcement_mode=mode)
             assert config.enforcement_mode == mode
 
@@ -498,7 +503,8 @@ class TestEffectiveEnforcementMode:
         """Effective mode is always the configured mode, regardless of dev_mode."""
         app = FastAPI()
 
-        for mode in ["log", "warn", "strict"]:
+        modes: tuple[EnforcementMode, ...] = ("log", "warn", "strict")
+        for mode in modes:
             for dev_mode in [False, True]:
                 config = LoopGuardConfig(
                     enforcement_mode=mode,
