@@ -106,7 +106,9 @@ module = "locust.*"
 ignore_missing_imports = true
 
 [tool.ruff]
-target-version = "py312"
+# target-version is intentionally unset: ruff derives it from
+# project.requires-python, so the UP rewrites can never target a version the
+# package does not claim to support.
 line-length = 88
 src = ["src", "tests"]
 
