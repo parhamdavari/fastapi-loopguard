@@ -1,6 +1,7 @@
 """Configuration for LoopGuard middleware."""
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +24,7 @@ class LoopGuardConfig:
         adaptive_percentile: Percentile (0.0-1.0) for baseline calculation.
         adaptive_min_samples: Minimum samples before adaptive mode activates.
         adaptive_update_interval_ms: How often to recalculate threshold.
+        enforcement_mode: How to respond to blocking: "log", "warn", or "strict".
     """
 
     enabled: bool = True
@@ -36,7 +38,7 @@ class LoopGuardConfig:
 
     # Enforcement mode: how aggressively to respond to blocking
     # "log" = just log (production), "warn" = loud warnings, "strict" = 503 errors
-    enforcement_mode: str = "warn"
+    enforcement_mode: Literal["log", "warn", "strict"] = "warn"
 
     # Adaptive threshold settings
     adaptive_threshold: bool = False
