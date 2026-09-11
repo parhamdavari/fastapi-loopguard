@@ -38,23 +38,27 @@ app.add_middleware(LoopGuardMiddleware)
 
 ## Enforcement Modes
 
-| Mode | Behavior | Use Case |
-|------|----------|----------|
-| `"warn"` | Console warnings + headers | **Default** |
-| `"strict"` | HTTP 503 + error page | Development / CI |
-| `"log"` | Silent logging | Production |
+| Mode | Behavior | `x-blocking-*` headers | Use Case |
+|------|----------|------------------------|----------|
+| `"warn"` | Console warnings | Yes, by default | **Default** |
+| `"strict"` | HTTP 503 + error page | Yes, by default | Development / CI |
+| `"log"` | Silent logging | Only with `dev_mode=True` | Production |
+
+**Strict mode 503s every request that was in flight during the stall, not just the one that blocked.** The sentinel measures event-loop lag, so it cannot name the guilty handler. With 100 concurrent requests and one of them blocking, the other 99 also get a 503 — same body, same `x-blocking-total-ms`. That is why strict mode is opt-in, and why `dev_mode` cannot switch it on.
+
+**Streaming responses are a blind spot.** Headers and the strict-mode 503 are both decided at `http.response.start`, which Starlette's `StreamingResponse` sends before the body generator runs. For `StreamingResponse`, SSE, and token-streaming endpoints, response headers and strict-mode 503s cannot report blocking that happens after the first chunk is on the wire. The log output still reports it — `enforcement_mode="log"` is enough, since the monitor logs each event independently of the response.
 
 ```python
 from fastapi_loopguard import LoopGuardConfig
-
-# Development: diagnostic headers on every response
-config = LoopGuardConfig(dev_mode=True)
 
 # Development / CI: fail loudly with an educational 503
 config = LoopGuardConfig(enforcement_mode="strict")
 
 # Production: silent logging
 config = LoopGuardConfig(enforcement_mode="log")
+
+# Production, but keep the diagnostic headers
+config = LoopGuardConfig(enforcement_mode="log", dev_mode=True)
 
 app.add_middleware(LoopGuardMiddleware, config=config)
 ```
