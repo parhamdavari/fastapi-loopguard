@@ -138,10 +138,10 @@ subcommand exits 2.
       "events": [{"lag_ms": 180.24, "threshold_ms": 50.0}],
       "hints": [
         "time.sleep(n) -> await asyncio.sleep(n)",
-        "requests.get(url) -> await httpx.AsyncClient().get(url)",
-        "open(f).read() -> await aiofiles.open(f)",
-        "subprocess.run(...) -> await asyncio.create_subprocess_exec(...)",
-        "CPU-bound work -> await asyncio.to_thread(func)"
+        "requests.get(url) -> async with httpx.AsyncClient() as client: await client.get(url)",
+        "open(path).read() -> await asyncio.to_thread(Path(path).read_text)",
+        "subprocess.run(cmd) -> proc = await asyncio.create_subprocess_exec(*cmd); await proc.wait()",
+        "tokenizer.encode(text) -> await asyncio.to_thread(tokenizer.encode, text)"
       ]
     },
     {
@@ -230,11 +230,11 @@ Against the demo app's blocking endpoint that prints:
   "help": {
     "problem": "Synchronous code blocked the async event loop",
     "common_causes": [
-      "time.sleep() -> await asyncio.sleep()",
-      "requests.get() -> await httpx.AsyncClient().get()",
-      "open().read() -> await aiofiles.open()",
-      "subprocess.run() -> asyncio.create_subprocess_exec()",
-      "CPU-bound work -> asyncio.to_thread(func)"
+      "time.sleep(n) -> await asyncio.sleep(n)",
+      "requests.get(url) -> async with httpx.AsyncClient() as client: await client.get(url)",
+      "open(path).read() -> await asyncio.to_thread(Path(path).read_text)",
+      "subprocess.run(cmd) -> proc = await asyncio.create_subprocess_exec(*cmd); await proc.wait()",
+      "tokenizer.encode(text) -> await asyncio.to_thread(tokenizer.encode, text)"
     ],
     "docs": "https://fastapi.tiangolo.com/async/"
   }
@@ -293,7 +293,8 @@ async test that blocks the event loop for >50ms and writes verdicts to
 When a test fails with "Event loop blocking detected":
 1. Read `loopguard.json`; find the `blocked` entry for that test.
 2. The blocking call is in the code path that test exercises. Replace
-   sync calls with the async equivalents listed under `hints`.
+   sync calls with the async equivalents listed under `hints`; they use
+   only the standard library and `httpx`.
 3. Never widen `loopguard_threshold_ms` or add `allow_blocking` to make
    a test pass — fix the blocking call instead.
 ```

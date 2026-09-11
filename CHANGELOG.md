@@ -32,6 +32,28 @@
 
 ### Fixed
 
+- **The fix hints recommended an undeclared package, in a form that does not
+  work.** The console banner, the strict-mode 503 body and the `hints` array
+  in `loopguard.json` all told the reader to rewrite `open(f).read()` as
+  `await aiofiles.open(f)`. `aiofiles` is third-party, is declared in no
+  extra, and that is not how it is used — while `README.md` taught
+  `await asyncio.to_thread(Path(path).read_text)` on the same page.
+  `docs/AI-HARNESS.md` tells agents to apply the `hints` literally, so the
+  harness added a dependency the README avoids. The same list also suggested
+  `await httpx.AsyncClient().get(url)`, which leaks a client per call. Every
+  hint is now defined once, in `src/fastapi_loopguard/hints.py`, rendered by
+  the banner, both 503 bodies and the plugin report, and quoted by the
+  README; each one uses only the standard library or `httpx`, and closes
+  what it opens.
+- **A blocking test failure printed the plugin before the verdict.** The
+  pytest plugin's wrapper is now hidden from the traceback, so
+  `Event loop blocking detected!` is the first line of the failure instead of
+  the last line under ~25 lines of the plugin's own source. An exception
+  raised by the test itself still reports with the test's own frame.
+- **`loopguard report` said "at at".** `json.JSONDecodeError.msg` can already
+  end in "at", and the CLI appended another. The message now reads
+  `invalid JSON (Invalid control character at line 1 column 8)` and names the
+  column.
 - **Blocking that ended without an `await` went unreported.** The sentinel
   measures a tick by resuming from its own sleep, so a handler — or a test —
   that blocked and then returned without awaiting left that sleep expired and

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import re
@@ -15,10 +16,31 @@ import pytest
 # Enable pytester fixture for plugin integration tests
 pytest_plugins = ["pytester"]
 
+from fastapi_loopguard import pytest_plugin  # noqa: E402
+from fastapi_loopguard.hints import hint_lines  # noqa: E402
 from fastapi_loopguard.pytest_plugin import (  # noqa: E402
     REPORT_SCHEMA_VERSION,
     BlockingDetector,
 )
+
+
+def _wrapper_source_lines() -> list[str]:
+    """The body of pytest_plugin's `wrapped`, as a traceback would print it.
+
+    Read from the module rather than hard-coded so the traceback-hiding test
+    keeps matching the wrapper when the wrapper changes.
+    """
+    source = Path(pytest_plugin.__file__).read_text()
+    tree = ast.parse(source)
+    wrapped = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "wrapped"
+    )
+    segment = ast.get_source_segment(source, wrapped) or ""
+    # Short lines ("try:", ")") are too generic to prove anything.
+    return [line.strip() for line in segment.splitlines() if len(line.strip()) > 25]
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DOC_PATH = _REPO_ROOT / "docs" / "AI-HARNESS.md"
@@ -320,6 +342,43 @@ class TestPytestPluginIntegration:
         assert "max lag:" in stdout
         assert "threshold:" in stdout
 
+    def test_failure_does_not_print_the_plugin_source(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The verdict, not ~25 lines of the plugin's own wrapper.
+
+        docs/AI-HARNESS.md tells agents to react to "Event loop blocking
+        detected"; it has to be what the reader sees, not the last line
+        under the wrapper's body.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import time
+            import asyncio
+
+            @pytest.mark.no_blocking
+            async def test_block_for_traceback():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+        """)
+
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+
+        stdout = result.stdout.str()
+        assert "Event loop blocking detected!" in stdout
+        plugin_lines = _wrapper_source_lines()
+        assert plugin_lines  # the helper actually found the wrapper
+        for line in plugin_lines:
+            assert line not in stdout, line
+
 
 class TestPluginHygiene:
     """Plugin behavior as an always-installed pytest11 entry point."""
@@ -543,6 +602,7 @@ class TestJsonReport:
         blocked = by_verdict["blocked"]
         assert "test_blocks" in blocked["nodeid"]
         assert blocked["events"][0]["lag_ms"] > 10.0
+        assert blocked["hints"] == hint_lines()
         assert any("time.sleep" in hint for hint in blocked["hints"])
 
         clean = by_verdict["clean"]

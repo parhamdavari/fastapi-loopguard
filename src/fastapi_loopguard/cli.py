@@ -64,8 +64,11 @@ def _load_report(path: Path) -> dict[str, Any]:
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
+        # Some of json's own messages already end in "at" ("Invalid control
+        # character at"), so appending " at line ..." read "at at line 1".
+        detail = exc.msg.removesuffix(" at")
         raise ReportError(
-            f"{path}: invalid JSON ({exc.msg} at line {exc.lineno})"
+            f"{path}: invalid JSON ({detail} at line {exc.lineno} column {exc.colno})"
         ) from exc
 
     if not isinstance(parsed, dict):

@@ -34,6 +34,8 @@ from typing import Any
 
 import pytest
 
+from .hints import hint_lines
+
 logger = logging.getLogger("fastapi_loopguard")
 
 # How long stop() waits for the monitor to record its pending sample. The
@@ -52,16 +54,6 @@ ALLOW_MARKER_NAME = "allow_blocking"
 
 # Per-session records for the machine-readable report
 _REPORT_KEY: pytest.StashKey[list[dict[str, Any]]] = pytest.StashKey()
-
-# Suggested rewrites included with every "blocked" verdict so an agent
-# consuming the report can act without extra context
-_FIX_HINTS = [
-    "time.sleep(n) -> await asyncio.sleep(n)",
-    "requests.get(url) -> await httpx.AsyncClient().get(url)",
-    "open(f).read() -> await aiofiles.open(f)",
-    "subprocess.run(...) -> await asyncio.create_subprocess_exec(...)",
-    "CPU-bound work -> await asyncio.to_thread(func)",
-]
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -236,6 +228,12 @@ def pytest_runtest_call(item: pytest.Item) -> None:
 
     # Wrap async test with blocking detection
     async def wrapped(*args: Any, **kwargs: Any) -> Any:
+        # Keep this frame out of the failure traceback. Without it a
+        # blocking verdict is printed under ~25 lines of this function's
+        # own source and the reader reaches "Event loop blocking detected!"
+        # last. An exception raised by the test itself is unaffected: only
+        # this frame is hidden, the user's own frames still show.
+        __tracebackhide__ = True
         threshold = _threshold_ms(item.config)
 
         detector = BlockingDetector(threshold_ms=threshold)
@@ -257,7 +255,7 @@ def pytest_runtest_call(item: pytest.Item) -> None:
                         {"lag_ms": round(lag, 2), "threshold_ms": threshold}
                         for lag in events
                     ],
-                    "hints": _FIX_HINTS if events else [],
+                    "hints": hint_lines() if events else [],
                 }
             )
 

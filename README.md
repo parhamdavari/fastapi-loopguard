@@ -86,16 +86,21 @@ for the formula and how to change it.
 ### Blocking calls, and what to write instead
 
 ```python
-time.sleep(1)                        # -> await asyncio.sleep(1)
-requests.get(url)                    # -> await httpx.AsyncClient().get(url)
-open(path).read()                    # -> await asyncio.to_thread(Path(path).read_text)
-client.chat.completions.create(...)  # -> await AsyncOpenAI().chat.completions.create(...)
-tokenizer.encode(text)               # -> await asyncio.to_thread(tokenizer.encode, text)
+time.sleep(n)           # -> await asyncio.sleep(n)
+requests.get(url)       # -> async with httpx.AsyncClient() as client: await client.get(url)
+open(path).read()       # -> await asyncio.to_thread(Path(path).read_text)
+subprocess.run(cmd)     # -> proc = await asyncio.create_subprocess_exec(*cmd); await proc.wait()
+tokenizer.encode(text)  # -> await asyncio.to_thread(tokenizer.encode, text)
 ```
 
-The last two are the ones that catch AI services out: the sync OpenAI client and
-a CPU-bound tokenizer both look like ordinary calls and both stop every other
-request on the worker until they return.
+That is the same list LoopGuard prints in its console banner, returns under
+`help.common_causes` in the strict-mode 503, and writes to `hints` in
+`loopguard.json` — it is defined once, in `src/fastapi_loopguard/hints.py`.
+
+The last one is what catches AI services out, along with a sync OpenAI client
+(`client.chat.completions.create(...)`, fixed by `AsyncOpenAI`): a CPU-bound
+tokenizer and a sync SDK both look like ordinary calls, and both stop every
+other request on the worker until they return.
 
 ## Enforcement Modes
 
