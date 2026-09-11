@@ -32,6 +32,16 @@
 
 ### Fixed
 
+- **A streamed response lost the console banner.** The banner was printed
+  only from the send wrapper, at `http.response.start` — and Starlette's
+  `StreamingResponse` sends that message before its body generator runs. A
+  600 ms stall inside the generator therefore produced the log line and no
+  banner at all, so a warn-mode user who was shown the banner in the quick
+  start and watches for it saw nothing while the stall was real. `"warn"` and
+  `"strict"` now also print it after the handler returns, gated so one
+  request still prints at most one banner. Headers and the strict-mode 503
+  remain undeliverable once the `200` has shipped; `README.md` and
+  `docs/CONFIGURATION.md` say which channels survive.
 - **The fix hints recommended an undeclared package, in a form that does not
   work.** The console banner, the strict-mode 503 body and the `hints` array
   in `loopguard.json` all told the reader to rewrite `open(f).read()` as
