@@ -169,6 +169,31 @@ class TestEmptyRun:
         assert captured.out == ""
         assert "--allow-empty" in captured.err
 
+    def test_no_totals_at_all_is_not_treated_as_an_empty_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A `status`-only report has no `totals.tests` to be zero, so the
+        empty-run gate must not fire — the count is unknown, not zero."""
+        path = _write(tmp_path, {"status": "clean"})
+        assert main(["report", path]) == EXIT_CLEAN
+
+        captured = capsys.readouterr()
+        assert "loopguard: clean  tests=unknown  flagged=unknown" in captured.out
+        assert captured.err == ""
+
+    def test_v1_totals_without_a_tests_key_is_not_an_empty_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A schema_version 1 report can carry `totals` without a `tests`
+        key; that is also an unknown count, not a zero one."""
+        report = {"schema_version": 1, "totals": {"flagged": 0}}
+        path = _write(tmp_path, report)
+        assert main(["report", path]) == EXIT_CLEAN
+
+        captured = capsys.readouterr()
+        assert "loopguard: clean  tests=unknown  flagged=0" in captured.out
+        assert captured.err == ""
+
 
 class TestBlockedReport:
     """A blocked report exits 1 and names every flagged test."""

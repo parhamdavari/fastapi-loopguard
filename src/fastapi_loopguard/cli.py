@@ -169,7 +169,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Read an existing loopguard.json, print a short summary, and exit "
             "0 if clean, 1 if blocking was detected, 2 if the report is "
-            "missing or malformed."
+            "missing or malformed, or the run instrumented zero tests."
         ),
         epilog=_EXIT_CODES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
