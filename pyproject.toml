@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
-    { name = "Parham" }
+    { name = "Parham Davari", email = "parham.davarii@gmail.com" }
 ]
 keywords = [
     "fastapi",
@@ -27,7 +27,9 @@ classifiers = [
     "Framework :: AsyncIO",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    # No "License :: OSI Approved ::" classifier: PEP 639 deprecates license
+    # classifiers once License-Expression is set, and `license = "MIT"` above
+    # already emits `License-Expression: MIT`.
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -74,6 +76,7 @@ Homepage = "https://github.com/parhamdavari/fastapi-loopguard"
 Documentation = "https://github.com/parhamdavari/fastapi-loopguard#readme"
 Repository = "https://github.com/parhamdavari/fastapi-loopguard"
 Issues = "https://github.com/parhamdavari/fastapi-loopguard/issues"
+Changelog = "https://github.com/parhamdavari/fastapi-loopguard/blob/main/CHANGELOG.md"
 
 [project.entry-points.pytest11]
 loopguard = "fastapi_loopguard.pytest_plugin"

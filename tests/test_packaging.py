@@ -33,6 +33,16 @@ def test_version_matches_pyproject() -> None:
     assert fastapi_loopguard.__version__ == data["project"]["version"]
 
 
+def test_author_and_changelog_url_are_declared() -> None:
+    """`pip show -v` must name an author with an email and link the changelog."""
+    pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text())
+    author = data["project"]["authors"][0]
+    assert author["name"].strip()
+    assert "@" in author["email"]
+    assert data["project"]["urls"]["Changelog"].endswith("/CHANGELOG.md")
+
+
 def test_error_page_links_to_real_repo() -> None:
     """The 503 page must link to the repository that actually ships this code."""
     middleware = LoopGuardMiddleware(_dummy_app)

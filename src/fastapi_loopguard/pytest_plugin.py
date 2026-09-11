@@ -72,7 +72,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     """Add loopguard options to pytest."""
     parser.addini(
         "loopguard_threshold_ms",
-        "Blocking detection threshold in milliseconds",
+        # pytest ini values have no float type, so this is registered as a
+        # string and converted in _threshold_ms; the help text has to say so.
+        "Blocking detection threshold in milliseconds, parsed as a float "
+        "(pytest ini has no float type); a value float() cannot parse fails "
+        "every instrumented test",
         type="string",
         default="50",
     )
