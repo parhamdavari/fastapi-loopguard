@@ -77,6 +77,11 @@ Issues = "https://github.com/parhamdavari/fastapi-loopguard/issues"
 [project.entry-points.pytest11]
 loopguard = "fastapi_loopguard.pytest_plugin"
 
+[project.scripts]
+# cli.py is stdlib-only and must never import pytest_plugin: the console
+# script has to work in an install with no dev extras.
+loopguard = "fastapi_loopguard.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/fastapi_loopguard"]
 
