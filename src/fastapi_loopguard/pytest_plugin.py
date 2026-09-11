@@ -228,11 +228,13 @@ def pytest_runtest_call(item: pytest.Item) -> None:
 
     # Wrap async test with blocking detection
     async def wrapped(*args: Any, **kwargs: Any) -> Any:
-        # Keep this frame out of the failure traceback. Without it a
-        # blocking verdict is printed under ~25 lines of this function's
-        # own source and the reader reaches "Event loop blocking detected!"
-        # last. An exception raised by the test itself is unaffected: only
-        # this frame is hidden, the user's own frames still show.
+        # Keep this frame out of the failure traceback. Without it pytest
+        # prints ~25 lines of this function's own source and the blocking
+        # verdict lands underneath it, the last thing the reader sees --
+        # while docs/AI-HARNESS.md tells agents to react to that verdict,
+        # so it has to come first. An exception raised by the test itself
+        # is unaffected: only this frame is hidden, the user's own frames
+        # still show.
         __tracebackhide__ = True
         threshold = _threshold_ms(item.config)
 
