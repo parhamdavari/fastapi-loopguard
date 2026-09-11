@@ -707,7 +707,7 @@ class TestStreamingConsoleBanner:
 class TestStrictModeHeaders:
     """Full header contract of the strict 503 and the clean pass-through."""
 
-    def _blocking_app(self) -> FastAPI:
+    def _strict_app(self, config: LoopGuardConfig) -> FastAPI:
         app = FastAPI()
 
         @app.get("/blocking")
@@ -721,14 +721,40 @@ class TestStrictModeHeaders:
             await asyncio.sleep(0.001)
             return {"status": "fast"}
 
-        config = LoopGuardConfig(
-            enforcement_mode="strict",
-            monitor_interval_ms=2.0,
-            fallback_threshold_ms=5.0,
-            log_blocking_events=False,
-        )
         app.add_middleware(LoopGuardMiddleware, config=config)
         return app
+
+    def _blocking_app(self) -> FastAPI:
+        """Tight enough to see the 100ms stall in /blocking straight away.
+
+        Only the tests that assert blocking *is* detected use this. A tight
+        threshold can only produce false positives, never false negatives,
+        so it costs those tests nothing.
+        """
+        return self._strict_app(
+            LoopGuardConfig(
+                enforcement_mode="strict",
+                monitor_interval_ms=2.0,
+                fallback_threshold_ms=5.0,
+                log_blocking_events=False,
+            )
+        )
+
+    def _clean_app(self) -> FastAPI:
+        """The same app at the shipped defaults, for the clean pass-through.
+
+        _blocking_app's 2ms tick and 5ms threshold leave ~7ms of
+        uninterrupted loop time before a request is called blocked, and an
+        ordinary generational GC pass in this suite measures 4.3-17.8ms on
+        3.11 under coverage -- so that margin is thinner than a routine
+        background pause the same process already produces, and a test that
+        asserts nothing blocked cannot rely on it. Nothing here needs a
+        tight threshold: the assertions are about the pass-through status
+        and header set, not about detection sensitivity.
+        """
+        return self._strict_app(
+            LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        )
 
     async def test_503_carries_full_strict_header_set(self) -> None:
         app = self._blocking_app()
@@ -751,7 +777,7 @@ class TestStrictModeHeaders:
         assert int(response.headers["content-length"]) == len(response.content)
 
     async def test_clean_strict_response_carries_diagnostic_headers(self) -> None:
-        app = self._blocking_app()
+        app = self._clean_app()
 
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -1026,6 +1052,138 @@ class TestMonitoringNeverFailsTheRequest:
 
         assert response.status_code == 200
         assert get_registry().active_count() == 0
+
+
+class _ExplodingStderr:
+    """A stderr that fails on write, the way a closed or detached one does."""
+
+    def __init__(self, exc: BaseException) -> None:
+        self._exc = exc
+
+    def write(self, data: str) -> int:
+        raise self._exc
+
+    def flush(self) -> None:
+        raise self._exc
+
+    def isatty(self) -> bool:
+        return False
+
+
+class TestConsoleBannerNeverFailsTheRequest:
+    """The banner writes to a stream the middleware does not own.
+
+    sys.stderr can be closed, detached, or a broken pipe under a daemonised
+    or supervised server, and print then raises ValueError or
+    BrokenPipeError. Every call site is on the request path, so an escaping
+    exception would turn a detected stall into a failed request -- at the two
+    pre-response sites it eats the response the client was about to receive.
+    Guarded in _log_console_warning itself, the same shape as _poll_monitor.
+    """
+
+    @staticmethod
+    def _explode(monkeypatch: pytest.MonkeyPatch, exc: BaseException) -> None:
+        monkeypatch.setattr("sys.stderr", _ExplodingStderr(exc))
+
+    @staticmethod
+    async def _run(
+        config: LoopGuardConfig, sent: list[Message], *, stream: bool
+    ) -> None:
+        """Drive a raw ASGI app whose stall is recorded at a known point.
+
+        stream=False records it before http.response.start, which is what the
+        send-wrapper (warn) and pre-503 (strict) banner sites see. stream=True
+        records it after the headers are on the wire, which is what the two
+        post-dispatch sites see.
+        """
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            def block() -> None:
+                next(iter(get_active_requests())).record_blocking(600.0)
+
+            if not stream:
+                block()
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send(
+                {"type": "http.response.body", "body": b"chunk1", "more_body": True}
+            )
+            if stream:
+                block()
+            await send(
+                {"type": "http.response.body", "body": b"chunk2", "more_body": False}
+            )
+
+        middleware = LoopGuardMiddleware(app, config=config)
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        scope: Scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/stream",
+            "headers": [],
+        }
+        await middleware(scope, receive, send)
+
+    async def test_warn_mode_survives_a_broken_stderr(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The send-wrapper site: the response must still reach the client."""
+        self._explode(monkeypatch, ValueError("I/O operation on closed file"))
+        config = LoopGuardConfig(enforcement_mode="warn", log_blocking_events=False)
+        sent: list[Message] = []
+
+        with caplog.at_level(logging.ERROR, logger="fastapi_loopguard"):
+            await self._run(config, sent, stream=False)
+
+        assert sent[0]["status"] == 200
+        headers = dict(sent[0]["headers"])
+        assert headers[b"x-loopguard-warning"] == b"blocking-detected"
+        assert headers[b"x-blocking-detected"] == b"true"
+        assert [m["body"] for m in sent[1:]] == [b"chunk1", b"chunk2"]
+        assert get_registry().active_count() == 0
+        assert "LoopGuard console banner failed" in caplog.text
+
+    async def test_strict_mode_survives_a_broken_stderr(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The pre-503 site: the 503 must still be sent, not swallowed."""
+        self._explode(monkeypatch, BrokenPipeError("broken pipe"))
+        config = LoopGuardConfig(enforcement_mode="strict", log_blocking_events=False)
+        sent: list[Message] = []
+
+        with caplog.at_level(logging.ERROR, logger="fastapi_loopguard"):
+            await self._run(config, sent, stream=False)
+
+        assert sent[0]["status"] == 503
+        assert dict(sent[0]["headers"])[b"x-loopguard-enforcement"] == b"strict"
+        assert b"event_loop_blocked" in sent[1]["body"]
+        assert get_registry().active_count() == 0
+        assert "LoopGuard console banner failed" in caplog.text
+
+    @pytest.mark.parametrize("mode", ["warn", "strict"])
+    async def test_post_dispatch_sites_survive_a_broken_stderr(
+        self,
+        mode: EnforcementMode,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A mid-stream stall banner fails after the bytes are already out."""
+        self._explode(monkeypatch, ValueError("I/O operation on closed file"))
+        config = LoopGuardConfig(enforcement_mode=mode, log_blocking_events=False)
+        sent: list[Message] = []
+
+        with caplog.at_level(logging.ERROR, logger="fastapi_loopguard"):
+            await self._run(config, sent, stream=True)
+
+        assert sent[0]["status"] == 200
+        assert [m["body"] for m in sent[1:]] == [b"chunk1", b"chunk2"]
+        assert get_registry().active_count() == 0
+        assert "LoopGuard console banner failed" in caplog.text
 
 
 class TestLogModeUsesTheFinallyPoll:

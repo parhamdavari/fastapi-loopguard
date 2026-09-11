@@ -99,6 +99,7 @@ src/fastapi_loopguard/
 - HTTP tests use `httpx.AsyncClient(transport=ASGITransport(app=app))`. Plugin tests use the `pytester` fixture to run generated test files in-process.
 - Each invariant has dedicated coverage: `test_enforcement_mode.py` for modes and dev-mode escalation, `test_monitor.py` for calibration, idempotency, and task cancellation, `test_cumulative_blocking.py` for the window, `test_context.py` for registry lifecycle and `__slots__`, `test_pytest_plugin.py` for the marker.
 - Timing tests are inherently flaky under load. Prefer driving `SentinelMonitor` directly with an `on_blocking` callback (as `test_cumulative_blocking.py` does) over asserting on wall-clock durations.
+- **A test that asserts a request came back clean must not run against a tight threshold.** It is asserting that nothing stalled the loop, which is not something a test controls. `TestStrictModeHeaders._blocking_app` uses a 2ms tick and a 5ms threshold, so a request there has ~7ms of uninterrupted loop time before it is called blocked - thinner than an ordinary generational GC pass in this same suite, which measures 4.3-17.8ms on 3.11 under coverage. Where those passes land is a deterministic function of the session's allocation sequence, so adding a test *anywhere* in the suite shifts them, and a margin that small reopens as a 503 for a request that did nothing wrong. That is how `test_clean_strict_response_carries_diagnostic_headers` broke once already. A tight threshold can only cause false positives, so it is free for the tests that assert blocking *is* detected and unaffordable for the one that asserts it is not: the clean-path test builds its own app at the shipped defaults (`_clean_app`). Give a new clean-path assertion its own generous threshold rather than borrowing a detection app's.
 
 ## The evals harness (`evals/`)
 
@@ -134,9 +135,7 @@ other people's models, so it carries its own invariants:
 
 Recorded so they are not rediscovered. Fixing any of them is its own task.
 
-- **`_log_console_warning` can raise into the host app** ([#78](https://github.com/parhamdavari/fastapi-loopguard/issues/78)). Its `print(..., file=sys.stderr)` is unguarded, so a closed or broken stderr raises straight through — contradicting the "nothing the middleware runs on the request path may raise into the host app" convention that `_poll_monitor` and `_record_request` two functions below both honour. Four call sites, unequal blast radius: at the two older ones (warn's send wrapper, strict's pre-503 print) the raise eats the response; at the two post-dispatch ones the response is already on the wire. Invariant 5 is unaffected — all four sit inside `_handle_http`'s `try`, so the context is still unregistered. The fix is the same `try/except Exception: logger.exception(...)` shape as its neighbours.
-
-`FINDINGS.md` carries the fuller list, including design tensions deferred from the 0.5 correctness pass.
+None currently recorded. `FINDINGS.md` carries the fuller list, including design tensions deferred from the 0.5 correctness pass.
 
 ## Fundamental Guidelines
 
