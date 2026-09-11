@@ -5,13 +5,17 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from typing import Any
 
 import pytest
 
 # Enable pytester fixture for plugin integration tests
 pytest_plugins = ["pytester"]
 
-from fastapi_loopguard.pytest_plugin import BlockingDetector  # noqa: E402
+from fastapi_loopguard.pytest_plugin import (  # noqa: E402
+    REPORT_SCHEMA_VERSION,
+    BlockingDetector,
+)
 
 
 class TestBlockingDetector:
@@ -494,7 +498,8 @@ class TestJsonReport:
         assert report_file.exists()
         report = json.loads(report_file.read_text())
 
-        assert report["schema_version"] == 1
+        assert report["schema_version"] == 2
+        assert report["status"] == "blocked"
         assert report["threshold_ms"] == 10.0
         assert report["totals"] == {"tests": 2, "flagged": 1}
 
@@ -544,6 +549,92 @@ class TestJsonReport:
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1)
         assert not list(pytester.path.glob("*.json"))
+
+
+class TestReportStatus:
+    """The top-level pass/fail verdict a consuming agent reads."""
+
+    _INI = """
+        [pytest]
+        asyncio_mode = auto
+        loopguard_threshold_ms = 10
+    """
+
+    def _report(self, pytester: pytest.Pytester) -> dict[str, Any]:
+        report_file = pytester.path / "loopguard.json"
+        assert report_file.exists()
+        parsed: dict[str, Any] = json.loads(report_file.read_text())
+        return parsed
+
+    def test_status_blocked_when_a_test_is_flagged(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking
+            async def test_blocks():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini(self._INI)
+
+        result = pytester.runpytest("--loopguard-report=loopguard.json")
+        result.assert_outcomes(failed=1)
+
+        report = self._report(pytester)
+        assert report["schema_version"] == REPORT_SCHEMA_VERSION
+        assert report["status"] == "blocked"
+        # Additive: the derived field existing consumers read still agrees
+        assert report["totals"]["flagged"] == 1
+
+    def test_status_clean_when_nothing_is_flagged(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking
+            async def test_clean():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini(self._INI)
+
+        result = pytester.runpytest("--loopguard-report=loopguard.json")
+        result.assert_outcomes(passed=1)
+
+        report = self._report(pytester)
+        assert report["status"] == "clean"
+        assert report["totals"] == {"tests": 1, "flagged": 0}
+
+    def test_status_clean_when_no_test_was_instrumented(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """Zero instrumented tests is "clean" with totals.tests == 0.
+
+        Nothing blocked because nothing was watched. The documented contract
+        is that a gate which must also insist the suite was checked reads
+        totals.tests > 0 alongside status.
+        """
+        pytester.makepyfile("""
+            import time
+
+            def test_sync_blocks():
+                time.sleep(0.05)
+        """)
+        pytester.makeini(self._INI)
+
+        result = pytester.runpytest("--loopguard-report=loopguard.json")
+        result.assert_outcomes(passed=1)
+
+        report = self._report(pytester)
+        assert report["status"] == "clean"
+        assert report["totals"] == {"tests": 0, "flagged": 0}
+        assert report["tests"] == []
 
 
 class TestDetectorArmedBeforeTestBody:
