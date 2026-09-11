@@ -76,17 +76,12 @@ x-loopguard-warning: blocking-detected
 The console gets a matching banner for each request that was in flight during
 the stall. What happens next is up to `enforcement_mode`.
 
-**The detection threshold is calibrated, not fixed at `fallback_threshold_ms`.**
-At startup LoopGuard measures the loop's idle baseline and sets the threshold to
-`baseline × threshold_multiplier`, clamped to
-`[monitor_interval_ms, fallback_threshold_ms]` — calibration can only tighten
-it, never raise it. On a quiet loop it lands on the `monitor_interval_ms` floor,
-10 ms by default rather than the 50 ms fallback, which is why an idle app can log
-a sub-50 ms `Event loop blocked ... (no active request)` line. No flag turns
-calibration off; to pin the threshold at `fallback_threshold_ms`, raise
-`threshold_multiplier` until `baseline × multiplier` clears it —
-[Detection Tuning](https://github.com/parhamdavari/fastapi-loopguard/blob/v0.6.1/docs/CONFIGURATION.md#detection-tuning)
-has the numbers.
+**The detection threshold is measured at startup, not fixed at
+`fallback_threshold_ms`.** Calibration usually settles below that 50 ms fallback
+— 10 ms at the defaults — which is why an idle app can log a sub-50 ms
+`Event loop blocked ... (no active request)` line; see
+[Detection Tuning](https://github.com/parhamdavari/fastapi-loopguard/blob/main/docs/CONFIGURATION.md#detection-tuning)
+for the formula and how to change it.
 
 ### Blocking calls, and what to write instead
 
@@ -174,7 +169,7 @@ Adds diagnostic headers to every response for debugging:
 ### Log Mode
 Writes one log line per event, listing the requests that were in flight — plain
 text by default, JSON if you install LoopGuard's formatter with
-[`configure_logging(structured=True)`](https://github.com/parhamdavari/fastapi-loopguard/blob/v0.6.1/docs/CONFIGURATION.md#log-output-and-json-formatting):
+[`configure_logging(structured=True)`](https://github.com/parhamdavari/fastapi-loopguard/blob/main/docs/CONFIGURATION.md#log-output-and-json-formatting):
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.6.1/assets/error-page-screenshot-console.png" alt="Console output" width="600" />
@@ -184,7 +179,7 @@ text by default, JSON if you install LoopGuard's formatter with
 
 ## Testing AI-Generated Code
 
-Measured, not assumed: asked for ordinary endpoints with no warning, every one of seven benchmarked models blocked the event loop — 60 of 233 measured samples, GPT-4.1 in 21 of 37 ([benchmark](https://github.com/parhamdavari/fastapi-loopguard/blob/v0.6.1/evals/README.md#results), N=5 per task, 2026-08). Adding one sentence — "the endpoint must not block the event loop" — removed every blocking verdict: 0 of 222. The bundled pytest plugin is that sentence, enforced. It turns blocking into a red test and a machine-readable report the agent can fix from, with no per-test annotations.
+Measured, not assumed: asked for ordinary endpoints with no warning, every one of seven benchmarked models blocked the event loop — 60 of 233 measured samples, GPT-4.1 in 21 of 37 ([benchmark](https://github.com/parhamdavari/fastapi-loopguard/blob/main/evals/README.md#results), N=5 per task, 2026-08). Adding one sentence — "the endpoint must not block the event loop" — removed every blocking verdict: 0 of 222. The bundled pytest plugin is that sentence, enforced. It turns blocking into a red test and a machine-readable report the agent can fix from, with no per-test annotations.
 
 Async tests need `pytest-asyncio` (or `anyio`'s pytest plugin) installed — `pip install pytest-asyncio` — with `asyncio_mode = auto` set, since pytest-asyncio's default strict mode errors on plain `async def` tests. `loopguard_all_async` makes every async test fail on blocking; `loopguard_report` writes verdicts and fix hints for the agent to `loopguard.json`:
 
@@ -196,7 +191,7 @@ loopguard_all_async = true
 loopguard_report = loopguard.json
 ```
 
-The plugin ships inside the package and auto-registers through pytest's `pytest11` entry point — nothing to add to `conftest.py` — and stays inert until you opt in with `loopguard_all_async` or a per-test `@pytest.mark.no_blocking`; [docs/AI-HARNESS.md](https://github.com/parhamdavari/fastapi-loopguard/blob/v0.6.1/docs/AI-HARNESS.md) has the full option list, the report schema, the `allow_blocking` opt-out, and a drop-in snippet for your project's agent instructions.
+The plugin ships inside the package and auto-registers through pytest's `pytest11` entry point — nothing to add to `conftest.py` — and stays inert until you opt in with `loopguard_all_async` or a per-test `@pytest.mark.no_blocking`; [docs/AI-HARNESS.md](https://github.com/parhamdavari/fastapi-loopguard/blob/main/docs/AI-HARNESS.md) has the full option list, the report schema, the `allow_blocking` opt-out, and a drop-in snippet for your project's agent instructions.
 
 ## Known limitations
 
@@ -205,10 +200,10 @@ Two are worth knowing before you wire this into anything:
 - **Streaming responses are a blind spot.** Headers and the strict-mode 503 are decided before a `StreamingResponse` body runs, so blocking after the first chunk never reaches the response — see [Enforcement Modes](#enforcement-modes) above. `enforcement_mode="log"` still reports it.
 - **Strict mode 503s every request that was in flight**, not only the one that blocked — see [Enforcement Modes](#enforcement-modes) above. That is why it is opt-in.
 
-[`FINDINGS.md`](https://github.com/parhamdavari/fastapi-loopguard/blob/v0.6.1/FINDINGS.md) is the full list, including the design tensions deferred from the 0.5 and 0.6 correctness passes.
+[`FINDINGS.md`](https://github.com/parhamdavari/fastapi-loopguard/blob/main/FINDINGS.md) is the full list, including the design tensions deferred from the 0.5 and 0.6 correctness passes.
 
 ---
 
 <p align="center">
-  <a href="https://github.com/parhamdavari/fastapi-loopguard/blob/v0.6.1/docs/CONFIGURATION.md"><strong>Full Configuration Reference</strong></a>
+  <a href="https://github.com/parhamdavari/fastapi-loopguard/blob/main/docs/CONFIGURATION.md"><strong>Full Configuration Reference</strong></a>
 </p>

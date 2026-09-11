@@ -144,9 +144,11 @@ configure logging centrally, skip it and attach
 
 `StructuredFormatter` copies `path`, `method`, `lag_ms`, `request_id` and
 `blocking_count` into the JSON object when a record carries them as `extra`
-fields. The monitor's own line does not set them (it summarises across all
-in-flight requests in the message); `log_blocking_event()` in the same module
-does, and exists for callers who want to emit their own per-request record.
+fields. The monitor's own line sets none of them — it summarises across all
+in-flight requests in the message instead — and `log_blocking_event()` in the
+same module, a helper for callers who want to emit their own per-request record,
+sets the first four. Nothing in the library sets `blocking_count`: the formatter
+will emit it from a record you build yourself, but never fills it in for you.
 
 ---
 

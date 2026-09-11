@@ -141,17 +141,18 @@ published schema:
 
 ### Documentation
 
-- Every `README.md` link into the repository is now an absolute GitHub URL
-  pinned to a tag, like the images. The README is the PyPI long description
-  and the wheel ships no docs, so the relative links to
+- Every `README.md` link into the repository is now an absolute
+  `https://github.com/.../blob/main/...` URL. The README is the PyPI long
+  description and the wheel ships no docs, so the relative links to
   `docs/AI-HARNESS.md`, `docs/CONFIGURATION.md`, `FINDINGS.md` and
-  `evals/README.md` resolved under pypi.org and reached nothing.
-- The README now says the detection threshold is calibrated at startup and
-  usually lands on the `monitor_interval_ms` floor (10 ms at the defaults),
-  not on `fallback_threshold_ms` — which is why an idle app can log a
-  sub-50 ms "no active request" event. `docs/CONFIGURATION.md` carries the
-  clamp formula, the lifespan caveat, and how to pin the threshold at the
-  fallback.
+  `evals/README.md` resolved under pypi.org and reached nothing. Documentation
+  links track `main` so they reach the current document; the images stay
+  pinned to a tag, so a published page cannot change under a reader.
+- The README now says the detection threshold is measured at startup and
+  usually settles below `fallback_threshold_ms` (10 ms at the defaults, not
+  50) — which is why an idle app can log a sub-50 ms "no active request"
+  event. `docs/CONFIGURATION.md` carries the clamp formula, the lifespan
+  caveat, and how to pin the threshold at the fallback.
 - `docs/CONFIGURATION.md` documents `fastapi_loopguard.logging`:
   `configure_logging`, its arguments, and the JSON `StructuredFormatter`.
   The README's log-mode description no longer calls the default output
