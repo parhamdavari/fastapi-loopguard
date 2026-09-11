@@ -100,10 +100,25 @@ endpoint.
 silent on the wire.
 
 That means the defaults expose internal event-loop timing to every client. It is
-what you want in development and CI. On a public service it is also the
-reconnaissance step for a cheap availability attack: the headers tell an
-unauthenticated caller exactly which of your endpoints stall the loop and by how
-long. If you serve untrusted clients and would rather not publish it, choose
+what you want in development and CI. On a public service it is also a free
+measurement for anyone probing for a cheap availability attack: the headers tell
+an unauthenticated caller that the loop stalled while their request was in
+flight, and how many milliseconds were attributed to it.
+
+What they do **not** say is which endpoint caused it. A stall is attributed to
+every request in flight, so a caller on a perfectly async route sees the same
+numbers as the request that actually blocked — see
+[Strict mode fails every request in flight](#strict-mode-fails-every-request-in-flight).
+The exposure is the timing signal itself, plus the narrowing an attacker can do
+to it: on a service quiet enough that theirs is the only request in flight, a
+non-zero `x-blocking-count` narrows the stall to the route they just called, and
+they can repeat the probe until the loop is that quiet. That inference holds only
+if nothing else on the same loop ran in the window. Only HTTP requests register a
+context, so a WebSocket handler, a background task or a scheduled job can freeze
+the loop without ever appearing in the count — and a lone caller then sees a
+number that implicates nothing they called.
+
+If you serve untrusted clients and would rather not publish it, choose
 `enforcement_mode="log"` and leave `dev_mode` at `False` — that combination sends
 no diagnostic headers at all — or strip the `x-blocking-*` headers at your
 reverse proxy.
@@ -151,6 +166,21 @@ in-flight requests in the message instead — and `log_blocking_event()` in the
 same module, a helper for callers who want to emit their own per-request record,
 sets the first four. Nothing in the library sets `blocking_count`: the formatter
 will emit it from a record you build yourself, but never fills it in for you.
+
+`configure_logging` touches the `fastapi_loopguard` logger and nothing else.
+It never calls `logging.basicConfig()` and never reconfigures the root logger,
+Uvicorn's loggers, or your application's own, so installing it cannot change
+how the rest of your logs are formatted or where they go.
+
+**If you need LoopGuard's output to be JSON only, choose
+`enforcement_mode="log"`.** `"warn"` and `"strict"` also write a plain-text
+console banner straight to `sys.stderr` with `print()`. It does not go through
+the logging module at all, so `StructuredFormatter` never sees it and neither
+`level` nor the `stream` argument above has any effect on it — a collector
+reading stderr as JSON gets a block of plain text in the middle of the stream.
+Both modes emit it at most once per request, including for a stall that only
+began after the response started. `"log"` mode never prints it, so everything
+LoopGuard emits goes through the logger and through your formatter.
 
 ---
 
