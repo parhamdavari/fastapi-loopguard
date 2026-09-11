@@ -1234,3 +1234,201 @@ class TestMonitorLoopRecovery:
 
         await monitor.stop()
         assert len(calls) >= 2
+
+
+class TestPollOnResponsePath:
+    """Tests for SentinelMonitor.poll()."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    @pytest.fixture
+    def config(self) -> LoopGuardConfig:
+        """Config with a low threshold and no adaptive drift."""
+        return LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            fallback_threshold_ms=20.0,
+            cumulative_blocking_enabled=False,
+        )
+
+    async def test_poll_reports_a_block_that_never_yielded(
+        self, config: LoopGuardConfig
+    ) -> None:
+        """poll() measures a stall the monitor's own sleep never resumed from."""
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        monitor = SentinelMonitor(config, on_blocking=on_blocking)
+        await monitor.start_with_background_calibration()
+        try:
+            await asyncio.sleep(0.02)  # let the loop take a tick
+            time.sleep(0.15)
+            monitor.poll()  # no await between the block and this call
+            assert len(events) == 1
+            assert events[0] > 100.0
+        finally:
+            await monitor.stop()
+
+    async def test_poll_reports_a_tick_at_most_once(
+        self, config: LoopGuardConfig
+    ) -> None:
+        """A tick consumed by poll() is not reported again by the loop."""
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        monitor = SentinelMonitor(config, on_blocking=on_blocking)
+        await monitor.start_with_background_calibration()
+        try:
+            await asyncio.sleep(0.02)
+            time.sleep(0.15)
+            monitor.poll()
+            monitor.poll()  # second call on the same tick is a no-op
+            await asyncio.sleep(0.05)  # let the loop resume and skip the tick
+            assert len(events) == 1
+        finally:
+            await monitor.stop()
+
+    async def test_poll_is_a_noop_on_a_stopped_monitor(
+        self, config: LoopGuardConfig
+    ) -> None:
+        """poll() does nothing before start and after stop."""
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        monitor = SentinelMonitor(config, on_blocking=on_blocking)
+        monitor.poll()
+        await monitor.start_with_background_calibration()
+        await asyncio.sleep(0.02)
+        await monitor.stop()
+        time.sleep(0.15)
+        monitor.poll()
+        assert events == []
+
+    async def test_poll_ignores_an_idle_loop(self, config: LoopGuardConfig) -> None:
+        """poll() on a healthy loop reports nothing."""
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        monitor = SentinelMonitor(config, on_blocking=on_blocking)
+        await monitor.start_with_background_calibration()
+        try:
+            await asyncio.sleep(0.05)
+            monitor.poll()
+            assert events == []
+        finally:
+            await monitor.stop()
+
+
+class TestPollDoesNotInventBlocking:
+    """poll() measures a tick in progress; a dead tick is not a stall."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    @pytest.fixture
+    def config(self) -> LoopGuardConfig:
+        """Config with a low threshold and no adaptive drift."""
+        return LoopGuardConfig(
+            monitor_interval_ms=5.0,
+            fallback_threshold_ms=20.0,
+            cumulative_blocking_enabled=False,
+        )
+
+    async def test_a_cancelled_monitor_reports_nothing(
+        self, config: LoopGuardConfig
+    ) -> None:
+        """A task cancelled outside stop() leaves a tick that never completes.
+
+        Measuring against it invents a stall that grows with wall-clock time,
+        which in strict mode is a 503 for a request that did nothing wrong.
+        """
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        monitor = SentinelMonitor(config, on_blocking=on_blocking)
+        await monitor.start_with_background_calibration()
+        try:
+            await asyncio.sleep(0.02)
+            assert monitor._task is not None
+            monitor._task.cancel()  # an external supervisor, not stop()
+            await asyncio.sleep(0.3)  # an idle loop, nothing blocking
+            monitor.poll()
+            assert events == []
+        finally:
+            await monitor.stop()
+
+    async def test_the_error_backoff_reports_nothing(
+        self, config: LoopGuardConfig
+    ) -> None:
+        """The loop's own recovery sleep must not look like a stall."""
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+            raise RuntimeError("callback blew up")
+
+        monitor = SentinelMonitor(config, on_blocking=on_blocking)
+        await monitor.start_with_background_calibration()
+        try:
+            await asyncio.sleep(0.02)
+            time.sleep(0.1)
+            await asyncio.sleep(0.02)  # the loop reports, the callback raises
+            events.clear()
+            await asyncio.sleep(0.3)  # sitting in the 1s recovery sleep
+            monitor.poll()
+            assert events == []
+        finally:
+            await monitor.stop()
+
+
+class TestPollDoesNotSwallowTheRestOfAStall:
+    """The polled portion and the residual are disjoint, not overlapping."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self) -> None:
+        """Clear the request registry before each test."""
+        get_registry().clear()
+
+    async def test_the_residual_is_still_reported(self) -> None:
+        """A stall spanning the poll is reported in full, across two events."""
+        events: list[float] = []
+
+        def on_blocking(lag_ms: float, path: str | None, method: str | None) -> None:
+            events.append(lag_ms)
+
+        monitor = SentinelMonitor(
+            LoopGuardConfig(
+                monitor_interval_ms=5.0,
+                fallback_threshold_ms=20.0,
+                cumulative_blocking_enabled=False,
+            ),
+            on_blocking=on_blocking,
+        )
+        await monitor.start_with_background_calibration()
+        try:
+            await asyncio.sleep(0.02)
+            time.sleep(0.1)
+            monitor.poll()  # the response goes out here
+            time.sleep(0.3)  # the stall continues afterwards
+            await asyncio.sleep(0.05)  # let the loop resume and report
+
+            assert len(events) == 2
+            assert 90.0 < events[0] < 200.0
+            assert 250.0 < events[1] < 400.0
+            assert 380.0 < sum(events) < 500.0
+        finally:
+            await monitor.stop()

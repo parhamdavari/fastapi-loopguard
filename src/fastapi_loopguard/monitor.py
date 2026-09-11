@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections import deque
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .context import get_active_requests
 
@@ -147,6 +147,10 @@ class SentinelMonitor:
         "_running",
         "_baseline_ms",
         "_threshold_ms",
+        "_tick_start",
+        "_tick_consumed",
+        "_tick_reported_ms",
+        "_metrics",
         "_calibrated",
         "_adaptive",
         "_last_adapt_time",
@@ -173,6 +177,12 @@ class SentinelMonitor:
         self._baseline_ms: float = 0.0
         self._threshold_ms: float = config.fallback_threshold_ms
         self._calibrated = False
+        # Set by _monitor_loop at the top of every tick; None until the loop
+        # runs, which is what makes poll() a no-op on a monitor that has not
+        # started or has been stopped
+        self._tick_start: float | None = None
+        self._tick_consumed = False
+        self._tick_reported_ms = 0.0
 
         # Initialize adaptive threshold if enabled
         if config.adaptive_threshold:
@@ -193,6 +203,27 @@ class SentinelMonitor:
             2, int(config.cumulative_window_ms / config.monitor_interval_ms) * 2
         )
         self._lag_history: deque[tuple[float, float]] = deque(maxlen=history_cap)
+
+        # Optional Prometheus export. Imported lazily so metrics.py stays off
+        # the import path of every app that does not ask for it.
+        self._metrics: Any = None
+        if config.prometheus_enabled:
+            from fastapi_loopguard.metrics import create_metrics
+
+            try:
+                self._metrics = create_metrics()
+            except Exception:
+                # An explicitly enabled flag that cannot work must say so, but
+                # a monitoring extra must never take the host app down. This
+                # covers the missing extra and a duplicate registration on the
+                # process-wide registry, which would otherwise fail startup.
+                logger.exception(
+                    "prometheus_enabled=True but metrics could not be set up; "
+                    "metrics are disabled. Install the extra with: "
+                    "pip install fastapi-loopguard[prometheus]"
+                )
+            else:
+                self._metrics.set_threshold(self._threshold_ms / 1000.0)
 
     @property
     def is_running(self) -> bool:
@@ -290,10 +321,20 @@ class SentinelMonitor:
         while self._running:
             try:
                 start = loop.time()
+                # Published so poll() can measure this tick from the response
+                # path before the sleep below ever resumes
+                self._tick_start = start
+                self._tick_consumed = False
+                self._tick_reported_ms = 0.0
                 await asyncio.sleep(interval_sec)
                 elapsed = loop.time() - start
 
                 lag_ms = (elapsed - interval_sec) * 1000.0
+
+                # A tick poll() already reported is a blocking tick, not a
+                # baseline sample, and its reported portion is spoken for
+                reported_ms = self._tick_reported_ms if self._tick_consumed else 0.0
+                residual_ms = max(0.0, lag_ms - reported_ms)
 
                 # Adaptive threshold processing
                 if self._adaptive:
@@ -301,7 +342,8 @@ class SentinelMonitor:
                     # the baseline. Admitting detected blocking makes the
                     # threshold chase the blocking upward until detection
                     # stops ("the worse the app gets, the less it reports").
-                    if lag_ms < self._threshold_ms:
+                    # A tick poll() reported is blocking, not baseline.
+                    if not self._tick_consumed and lag_ms < self._threshold_ms:
                         self._adaptive.add_sample(lag_ms)
                     now = loop.time()
                     if now - self._last_adapt_time >= adapt_interval_sec:
@@ -309,6 +351,8 @@ class SentinelMonitor:
                         new_threshold = self._adaptive.recalculate()
                         if new_threshold != old_threshold:
                             self._threshold_ms = new_threshold
+                            if self._metrics is not None:
+                                self._metrics.set_threshold(new_threshold / 1000.0)
                             logger.debug(
                                 "Adaptive threshold updated: %.2fms -> %.2fms",
                                 old_threshold,
@@ -316,15 +360,24 @@ class SentinelMonitor:
                             )
                         self._last_adapt_time = now
 
+                # Report only the part of the tick poll() has not already
+                # attributed. The two portions are disjoint, so no lag is
+                # counted twice and no lag is dropped: a stall that began
+                # before a response went out and continued after it is
+                # reported as the polled portion plus this residual.
                 triggered = False
-                if lag_ms > self._threshold_ms:
-                    self._handle_blocking(lag_ms)
+                if residual_ms > self._threshold_ms:
+                    self._handle_blocking(residual_ms)
                     triggered = True
 
                 if self._config.cumulative_blocking_enabled:
-                    self._check_cumulative(loop.time(), lag_ms, triggered)
+                    self._check_cumulative(loop.time(), residual_ms, triggered)
             except Exception:
                 logger.exception("Error in LoopGuard monitor loop")
+                # Drop the tick marker before yielding: it points at a tick
+                # that will never complete, and a poll() measuring against it
+                # would report a stall that never happened
+                self._tick_start = None
                 # Wait a bit before retrying to avoid tight loop on persistent error
                 try:
                     await asyncio.sleep(1.0)
@@ -332,6 +385,9 @@ class SentinelMonitor:
                     # The event loop is closing; nothing left to monitor. Bail
                     # out instead of dying with an unretrieved exception.
                     return
+            finally:
+                if not self._running:
+                    self._tick_start = None
 
     def _check_cumulative(self, now: float, lag_ms: float, triggered: bool) -> None:
         """Track baseline-corrected lag and fire once per saturated window.
@@ -361,6 +417,48 @@ class SentinelMonitor:
             # Clear history so one window reports at most once
             self._lag_history.clear()
 
+    def poll(self) -> None:
+        """Measure the current tick now instead of waiting for it to finish.
+
+        A handler that blocks and then returns without awaiting leaves the
+        monitor suspended in a sleep that has already expired: the lag is
+        real, but nothing has resumed to measure it, so the response goes out
+        reporting zero blocking. Callers on the response path invoke this
+        while the request context is still registered.
+
+        Synchronous on purpose — awaiting here would hand control to the
+        monitor task and reintroduce the ordering dependency this removes.
+        Reports at most once per tick; _monitor_loop skips a consumed tick.
+        """
+        if not self._running or self._tick_start is None or self._tick_consumed:
+            return
+        # A cancelled or finished monitor leaves _tick_start pointing at a
+        # tick that will never complete. Measuring against it invents a stall
+        # that grows with wall-clock time, which in strict mode is a 503 for
+        # requests that did nothing wrong.
+        if self._task is None or self._task.done():
+            self._tick_start = None
+            return
+
+        interval_sec = self._config.monitor_interval_ms / 1000.0
+        elapsed = asyncio.get_running_loop().time() - self._tick_start
+        lag_ms = (elapsed - interval_sec) * 1000.0
+
+        if lag_ms > self._threshold_ms:
+            self._tick_consumed = True
+            self._tick_reported_ms = lag_ms
+            self._handle_blocking(lag_ms)
+
+    def record_request(self, route: str, method: str) -> None:
+        """Count a monitored request in Prometheus. No-op without the extra.
+
+        Takes the matched route template, never the raw request path: the
+        path is client-controlled, and an unbounded metric label is remote
+        memory exhaustion.
+        """
+        if self._metrics is not None:
+            self._metrics.record_request(route, method)
+
     def _handle_blocking(self, lag_ms: float, is_cumulative: bool = False) -> None:
         """Handle a detected blocking event.
 
@@ -373,6 +471,14 @@ class SentinelMonitor:
         msg_type = (
             "Cumulative event loop blocking" if is_cumulative else "Event loop blocked"
         )
+
+        if self._metrics is not None:
+            # One observation per event, like the log line below: per-context
+            # metric work is O(N) on the loop thread right after a stall
+            self._metrics.record_blocking(
+                lag_ms / 1000.0,
+                "cumulative" if is_cumulative else "single",
+            )
 
         if not active_contexts:
             # No active requests - log as background blocking
@@ -469,6 +575,9 @@ class SentinelMonitor:
             return
 
         self._running = False
+        # Drop the tick marker so a later poll() cannot measure against a
+        # timestamp from before this stop
+        self._tick_start = None
 
         # Cancel calibration if still running
         calibration_task = self._calibration_task
