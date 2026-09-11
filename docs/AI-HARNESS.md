@@ -17,12 +17,18 @@ can repair from this report alone is untested and tracked in
 
 ## Quick start
 
+`loopguard_all_async` turns every async test into a blocking gate,
+`loopguard_report` writes verdicts to a file for the agent to read, and
+`loopguard_threshold_ms` sets the lag threshold. Comments on the same
+line as a value are not supported — pytest's ini parser does not strip
+them, so put explanations above the line instead:
+
 ```ini
 # pytest.ini (or [tool.pytest.ini_options] in pyproject.toml)
 [pytest]
 asyncio_mode = auto
-loopguard_all_async = true          # every async test is a blocking gate
-loopguard_report = loopguard.json   # verdicts for the agent to read
+loopguard_all_async = true
+loopguard_report = loopguard.json
 loopguard_threshold_ms = 50
 ```
 
