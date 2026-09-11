@@ -39,7 +39,7 @@ config = LoopGuardConfig(
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enabled` | bool | `True` | Master switch. Set `False` to disable entirely. |
-| `enforcement_mode` | str | `"warn"` | How to respond: `"log"`, `"warn"`, or `"strict"`. See [Enforcement modes](#enforcement-modes) — `"strict"` fails every request in flight, not just the one that blocked. |
+| `enforcement_mode` | `Literal["log", "warn", "strict"]` | `"warn"` | How to respond: `"log"`, `"warn"`, or `"strict"`. See [Enforcement modes](#enforcement-modes) — `"strict"` fails every request in flight, not just the one that blocked. |
 | `dev_mode` | bool | `False` | Adds the `x-blocking-*` response headers **in `"log"` mode only**. `"warn"` and `"strict"` send them regardless, so the flag has no effect there, and it never changes the enforcement mode. See [A note on the diagnostic headers](#a-note-on-the-diagnostic-headers). |
 | `log_blocking_events` | bool | `True` | Log blocking events to console |
 | `exclude_paths` | frozenset | `{"/health", ...}` | Paths to skip monitoring |

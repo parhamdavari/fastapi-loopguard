@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+### Report contract
+
 The `loopguard.json` report contract is now `schema_version` 2 and has a
 published schema:
 
@@ -14,6 +16,27 @@ published schema:
   the payload, with `additionalProperties: true` throughout because the
   report grows by adding keys. CI validates the documented example and a
   freshly generated report against it. (#50)
+
+### Packaging
+
+- **Removed the `structlog` extra.** `pip install fastapi-loopguard[structlog]`
+  installed `structlog` and changed nothing, because no module in `src/` imports
+  it; it was also pulled in by `[all]`. Anyone depending on that extra to
+  install structlog must now depend on `structlog` directly — `[structlog]` is
+  no longer a valid extra name and pip will warn that it does not exist. The
+  alternative, wiring `StructuredFormatter` onto structlog, would have been a
+  new feature rather than a packaging fix. (#51)
+- Python 3.14 is claimed: added to the CI matrix and to the PyPI classifiers.
+  The supported floor is unchanged at 3.12. (#46)
+- `enforcement_mode` is typed `Literal["log", "warn", "strict"]` and the alias
+  is exported as `fastapi_loopguard.EnforcementMode`, so a misspelled mode is a
+  type error at the call site instead of a `ValueError` at startup. The runtime
+  validation in `__post_init__` is unchanged. (#44)
+- ruff's `target-version` is no longer pinned; it is derived from
+  `project.requires-python`, so a `ruff --fix` can never rewrite code into
+  syntax newer than the package claims to support. (#45)
+
+### Evals
 
 The `evals/` benchmark and the claims it backs were also corrected;
 `README.md` and `docs/AI-HARNESS.md` now quote the new figures.

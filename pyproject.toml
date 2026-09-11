@@ -31,6 +31,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Monitoring",
     "Typing :: Typed",
@@ -40,11 +41,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Every extra must make an observable difference once installed:
+#   prometheus -> metrics.py wires up LoopGuardMetrics
+#   dev        -> the test, lint and type-check toolchain
+#   stress     -> examples/ needs a server and a load generator
+#   all        -> alias for every optional runtime feature
 prometheus = ["prometheus-client>=0.19.0"]
-structlog = ["structlog>=24.1.0"]
 all = [
     "prometheus-client>=0.19.0",
-    "structlog>=24.1.0",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -106,7 +110,9 @@ module = "locust.*"
 ignore_missing_imports = true
 
 [tool.ruff]
-target-version = "py312"
+# target-version is intentionally unset: ruff derives it from
+# project.requires-python, so the UP rewrites can never target a version the
+# package does not claim to support.
 line-length = 88
 src = ["src", "tests"]
 

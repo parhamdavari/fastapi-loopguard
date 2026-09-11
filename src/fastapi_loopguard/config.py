@@ -1,6 +1,11 @@
 """Configuration for LoopGuard middleware."""
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+# How aggressively the middleware responds to blocking. Typed so a typo is a
+# type error in the caller's editor, not a ValueError at app startup.
+EnforcementMode = Literal["log", "warn", "strict"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +47,7 @@ class LoopGuardConfig:
 
     # Enforcement mode: how aggressively to respond to blocking
     # "log" = just log (production), "warn" = loud warnings, "strict" = 503 errors
-    enforcement_mode: str = "warn"
+    enforcement_mode: EnforcementMode = "warn"
 
     # Adaptive threshold settings
     adaptive_threshold: bool = False
