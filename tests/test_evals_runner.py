@@ -146,6 +146,12 @@ class TestUnmeasuredSamples:
             "\n"
             "app = FastAPI()\n"
             "_pool = ProcessPoolExecutor()\n"
+            # Pay the pool's cold start at import, not inside the request.
+            # On Linux + Python 3.14 the default start method is forkserver
+            # (gh-84559) and the first submit blocks its caller ~50ms+ booting
+            # the fork server -- a real stall, but of pool construction, not of
+            # the offload this test is about.
+            "_pool.submit(int).result()\n"
             "\n"
             "\n"
             f"{route}"
