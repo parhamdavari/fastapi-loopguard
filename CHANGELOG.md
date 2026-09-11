@@ -32,6 +32,19 @@
 
 ### Fixed
 
+- **The console banner could raise into the host application.**
+  `_log_console_warning` wrote the banner with an unguarded
+  `print(..., file=sys.stderr)`. A closed, detached, or broken stderr —
+  routine for a daemonised or supervised server — makes `print` raise
+  `ValueError` or `BrokenPipeError`, and all four call sites are on the
+  request path. At the two pre-response ones (warn mode's send wrapper,
+  strict mode's print before the 503) the exception ate the response the
+  client was about to receive, turning a detected stall into a failed
+  request. The write is now guarded in `_log_console_warning` itself, the
+  same `try/except Exception` + `logger.exception` shape `_poll_monitor`
+  and `_record_request` already use, so the operator still learns the
+  banner was lost through any working log handler. The request context was
+  never leaked — every call site sits inside `_handle_http`'s `try`.
 - **A streamed response lost the console banner.** The banner was printed
   only from the send wrapper, at `http.response.start` — and Starlette's
   `StreamingResponse` sends that message before its body generator runs. A

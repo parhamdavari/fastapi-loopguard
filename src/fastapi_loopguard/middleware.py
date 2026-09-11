@@ -451,11 +451,23 @@ class LoopGuardMiddleware:
         return "text/html" in accept
 
     def _log_console_warning(self, ctx: RequestContext) -> None:
-        """Print attention-grabbing console warning to stderr."""
-        print(
-            _format_console_warning(ctx, _console_supports_color()),
-            file=sys.stderr,
-        )
+        """Print attention-grabbing console warning to stderr.
+
+        Never raises, same reason as _poll_monitor: sys.stderr belongs to
+        the host, not to us. A closed, detached, or broken stream makes
+        print raise (ValueError, BrokenPipeError), and every call site is
+        on the request path - two of them before the response is sent, so
+        an escaping exception would turn a detected stall into a failed
+        request. The logger may still have a working handler when stderr
+        does not, so the operator learns the banner was lost.
+        """
+        try:
+            print(
+                _format_console_warning(ctx, _console_supports_color()),
+                file=sys.stderr,
+            )
+        except Exception:
+            logger.exception("LoopGuard console banner failed")
 
     def _generate_error_html(self, ctx: RequestContext) -> str:
         """Generate educational HTML error page for strict mode.
