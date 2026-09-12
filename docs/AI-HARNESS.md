@@ -60,6 +60,8 @@ exist as CLI flags: `--loopguard-all-async`, `--loopguard-report=PATH`.
 | `@pytest.mark.no_blocking` | marker | — | Gate one test explicitly (works without all-async mode) |
 | `@pytest.mark.no_blocking(threshold_ms=N)` | marker | — | Override `loopguard_threshold_ms` for this test only, in either direction |
 | `@pytest.mark.allow_blocking` | marker | — | Exempt one test from all-async mode; takes no arguments |
+| `loopguard_pause()` | context manager | — | Stop measuring inside this block; the rest of the test is still gated |
+| `loopguard_only()` | context manager | — | Measure inside this block and nowhere else in the test |
 
 Exit semantics are plain pytest: flagged tests fail, so any CI that runs
 pytest is already enforcing the gate.
@@ -68,6 +70,31 @@ A test carrying both `no_blocking` and `allow_blocking` is still
 instrumented — `no_blocking` wins. `allow_blocking` means "not
 instrumented at all," so it does not accept `threshold_ms`; passing it
 anyway emits a warning rather than silently doing nothing.
+
+### Scoping measurement to part of a test
+
+Both managers come from `fastapi_loopguard.pytest_plugin`, neither
+awaits, and both are no-ops in a test the plugin is not instrumenting —
+so a shared helper can use them whether or not the gate is on:
+
+```python
+from fastapi_loopguard.pytest_plugin import loopguard_pause
+
+async def test_route(client):
+    with loopguard_pause():
+        app = create_app()          # construction, not a handler stall
+    resp = await client.get("/x")   # this is what gets measured
+```
+
+This is for work that is part of the test but not part of what it is
+testing: a route-unit test that builds a fresh app in its own body spends
+80–120ms on Pydantic validators and the OpenAPI schema, which the deployed
+service spends once at startup rather than per request. It is **not** a way
+to quiet a handler. Blocking before the window is still charged, blocking
+after it still flags, and a blocking handler inside the request that follows
+still fails the test — `loopguard_pause()` around the request itself is a
+silenced test wearing a different hat, and `allow_blocking` is the honest
+spelling of that.
 
 ## The `loopguard` command
 
@@ -361,7 +388,14 @@ When a test fails with "Event loop blocking detected":
    `@pytest.mark.no_blocking(threshold_ms=...)` on one test for a real,
    bounded worst case is a deliberate design decision; silencing a test
    you cannot explain is not.
-4. An `unmeasured` verdict is not a blocking verdict — it means the clock
+4. If the stall is the test's own setup — building an app or a fixture
+   the deployed service builds once at startup — scope that setup out
+   instead of raising the bar for everything the test does:
+   `with loopguard_pause(): app = create_app()`, from
+   `fastapi_loopguard.pytest_plugin`. The request after the block is
+   still fully measured, so this narrows the gate rather than removing
+   it. Scoping the call under test is not a use of it.
+5. An `unmeasured` verdict is not a blocking verdict — it means the clock
    could not be trusted, not that anything was ruled out. Never answer it
    with `allow_blocking`; investigate why the test's clock was untrusted
    instead.
