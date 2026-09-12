@@ -106,6 +106,20 @@ fixed are struck through with a note, not deleted.
     request's context. Birthday bound is ~77k concurrent in-flight requests;
     accepted as unrealistic, noted here so it is a known trade.
 
+19. **The pytest plugin's clock-drift check (#83) needs a tolerance, not an
+    exact match, because uvloop's `loop.time()` is not read fresh on every
+    call.** libuv (and therefore uvloop) caches the loop's notion of "now"
+    once per iteration rather than calling the OS clock on every `time()`
+    access, so two `loop.time()` reads a few microseconds apart on a busy
+    uvloop can legitimately return the same (or a slightly stale) value even
+    with no tampering at all. `BlockingDetector` compares a tick's `loop.time()`
+    -measured elapsed against the same tick measured on the pinned real
+    clock (`_REAL_MONOTONIC`) and only distrusts the clock past one monitor
+    interval (5ms) of disagreement — comparing for exact equality would
+    false-positive on every uvloop suite on this basis alone. No test in
+    this repo runs under uvloop, so this is a reasoned default, not a
+    measurement.
+
 ## Fixed since the first draft
 
 - Adaptive mode discarding the calibrated threshold (floor pinned at the

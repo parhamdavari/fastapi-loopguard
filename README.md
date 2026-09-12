@@ -196,7 +196,7 @@ loopguard_all_async = true
 loopguard_report = loopguard.json
 ```
 
-The plugin ships inside the package and auto-registers through pytest's `pytest11` entry point — nothing to add to `conftest.py` — and stays inert until you opt in with `loopguard_all_async` or a per-test `@pytest.mark.no_blocking`; [docs/AI-HARNESS.md](https://github.com/parhamdavari/fastapi-loopguard/blob/main/docs/AI-HARNESS.md) has the full option list, the report schema, the per-test `threshold_ms` override, the `allow_blocking` opt-out, and a drop-in snippet for your project's agent instructions.
+The plugin ships inside the package and auto-registers through pytest's `pytest11` entry point — nothing to add to `conftest.py` — and stays inert until you opt in with `loopguard_all_async` or a per-test `@pytest.mark.no_blocking`; [docs/AI-HARNESS.md](https://github.com/parhamdavari/fastapi-loopguard/blob/main/docs/AI-HARNESS.md) has the full option list, the report schema, the per-test `threshold_ms` override, the `allow_blocking` opt-out, a drop-in snippet for your project's agent instructions, and how a test whose event loop clock can't be trusted is reported `unmeasured` rather than a silently wrong `clean`.
 
 ## Known limitations
 

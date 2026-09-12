@@ -102,7 +102,7 @@ Exit codes follow the ruff/pyright convention, and are also in
 |------|---------|
 | `0` | clean — no blocking detected in the report |
 | `1` | blocking detected |
-| `2` | the report is missing, unreadable, or malformed, or the run instrumented zero tests |
+| `2` | the report is missing, unreadable, or malformed, the run instrumented zero tests, or (with `--require-measured`) at least one test's clock could not be trusted |
 
 Exit 2 is a tool failure, kept distinct from a verdict on purpose: a
 typo'd path, a truncated file, or a report carrying neither `status` nor
@@ -120,6 +120,15 @@ and prints a one-line warning to stderr alongside the usual summary. Pass
 `--allow-empty` for the rare case where zero tests is expected (e.g. a
 project with no async endpoints yet) to get exit 0 back.
 
+**`--require-measured` opts into failing on an untrustworthy clock.** By
+default an `"unmeasured"` verdict (see
+[When a test cannot be measured](#when-a-test-cannot-be-measured) below)
+does not change the exit code — it is a warning, not a verdict. Pass
+`--require-measured` for a caller that wants a hard guarantee instead: it
+exits 2 when `totals.unmeasured` is present and greater than zero. A
+`schema_version` 2 report predates the concept entirely and is unaffected
+by the flag either way.
+
 The verdict comes from the top-level `status` key. A report without one
 is a `schema_version` 1 report, and falls back to `totals.flagged > 0`,
 so a report written by an older version of the plugin still gates. The
@@ -133,10 +142,10 @@ subcommand exits 2.
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "status": "blocked",
   "threshold_ms": 50.0,
-  "totals": {"tests": 42, "flagged": 1},
+  "totals": {"tests": 43, "flagged": 1, "unmeasured": 1, "measured": 42},
   "tests": [
     {
       "nodeid": "tests/test_api.py::test_upload",
@@ -157,6 +166,14 @@ subcommand exits 2.
       "threshold_ms": 50.0,
       "events": [],
       "hints": []
+    },
+    {
+      "nodeid": "tests/test_api.py::test_frozen_clock",
+      "verdict": "unmeasured",
+      "threshold_ms": 50.0,
+      "events": [],
+      "hints": [],
+      "reason": "the event loop clock could not be trusted during this test (it may have been replaced, frozen, or unable to advance for a time) -- any blocking may have gone unmeasured"
     }
   ]
 }
@@ -185,6 +202,30 @@ and nothing blocked because nothing was watched — it is not evidence that
 the suite is clean. A gate that must also insist the suite was actually
 checked (a misconfigured `asyncio_mode`, a rename that dropped every async
 test) reads `totals.tests > 0` alongside `status`.
+
+### When a test cannot be measured
+
+A test's blocking detector times every tick against the real system clock,
+pinned when the plugin loads, precisely so it keeps working when the test
+under it replaces `time.monotonic` — the same function every asyncio timer
+resolves to. When that clock still cannot be trusted for the whole test
+(still replaced at teardown, or the loop's own clock provably fell behind
+it for a while), the verdict is `"unmeasured"`, never a silent `"clean"`:
+the plugin cannot rule out blocking it was not able to watch for. Positive
+evidence still wins outright — a test that both tampers with the clock and
+genuinely blocks past its threshold is `"blocked"`, not `"unmeasured"`.
+
+An unmeasured test is not a new failure: it keeps its own pass or fail
+result, under `loopguard_all_async` and under an explicit
+`@pytest.mark.no_blocking` alike. The plugin instead emits one
+`PytestWarning` naming the test and one terminal-summary line naming the
+count, and the report carries `totals.unmeasured`, `totals.measured`
+(instrumented tests minus the unmeasured ones), and a `reason` string on
+each affected `testRecord`. Both totals fields are omitted when there is
+nothing unmeasured, so an older, always-fully-measured report still reads
+the same. `loopguard report --require-measured` turns any unmeasured test
+into exit 2 for a caller that wants that hard guarantee instead of just
+the warning; see [The `loopguard` command](#the-loopguard-command) above.
 
 ### Schema
 
@@ -313,6 +354,10 @@ When a test fails with "Event loop blocking detected":
    `@pytest.mark.no_blocking(threshold_ms=...)` on one test for a real,
    bounded worst case is a deliberate design decision; silencing a test
    you cannot explain is not.
+4. An `unmeasured` verdict is not a blocking verdict — it means the clock
+   could not be trusted, not that anything was ruled out. Never answer it
+   with `allow_blocking`; investigate why the test's clock was untrusted
+   instead.
 ```
 
 ## Scoring models instead of guarding CI

@@ -2,8 +2,58 @@
 
 ## Unreleased
 
+### Fixed
+
+- **A test that replaces `time.monotonic` could wedge the whole suite
+  forever.** `asyncio.BaseEventLoop.time()` is `return time.monotonic()`,
+  resolved on the `time` module at call time, so
+  `monkeypatch.setattr(time, "monotonic", ...)` anywhere in a suite froze
+  every asyncio timer for as long as the patch held. The pytest plugin's
+  `BlockingDetector.stop()` drained the monitor task with
+  `await asyncio.wait_for(task, timeout=...)`, and the non-obvious half of
+  the bug: `wait_for`'s own deadline is scheduled through that same frozen
+  clock, so the timeout meant to bound the drain could not fire either — an
+  await that could not finish, bounded by a timeout that could not fire.
+  Reported from a real ~5450-test suite that silently stopped making
+  progress at 76% with no error, found only by sending SIGABRT and reading
+  the stack by hand (#83). `stop()` no longer drains: it measures the
+  in-flight tick synchronously against a real clock pinned at import
+  (`time.monotonic` captured before any test can replace it), then cancels
+  the monitor task outright. Cancelling a task suspended in `asyncio.sleep`
+  resolves through `call_soon`, not the timer heap, so it completes
+  regardless of what `time.monotonic` currently returns. A `threading.Timer`
+  watchdog around the drain was considered and rejected instead of fixing
+  the root cause — `RequestRegistry`'s no-locks premise (CLAUDE.md invariant
+  3) forbids adding a threading primitive without first changing that
+  premise, and a poll-then-cancel fix removes the need for a watchdog
+  entirely.
+- A test whose event loop clock could not be trusted for its full duration
+  (still replaced at teardown, or diverged from the real clock by more than
+  one monitor interval) is now reported `"unmeasured"`, never silently
+  `"clean"` — the plugin cannot rule out blocking it was not able to watch
+  for. Positive evidence of blocking still wins outright. Reported the same
+  way for a test whose `@pytest.mark.no_blocking(threshold_ms=...)` value
+  fails validation: it used to vanish from the JSON report entirely
+  (`pytest.fail()` raised before the record was appended), undercounting
+  `totals.tests` and letting the top-level `status` read `"clean"` while a
+  test loudly failed; it now gets an `"unmeasured"` record naming the
+  problem and still fails in pytest exactly as before.
+
 ### Added
 
+- `loopguard.json`'s `schema_version` is now 3: `verdict` gains
+  `"unmeasured"`, `testRecord` gains an optional `reason`, and `totals`
+  gains optional `unmeasured` and `measured` counts (omitted when there is
+  nothing unmeasured, so an older report reads the same). The top-level
+  `status` enum is unchanged (`"blocked"` / `"clean"`) so every
+  already-released `loopguard` binary keeps gating correctly. An unmeasured
+  test
+  emits one `PytestWarning` and is named in one `pytest_terminal_summary`
+  line; it never fails on its own. `loopguard report` prints the unmeasured
+  count and gains an opt-in `--require-measured` flag that exits 2 when any
+  test was unmeasured — the default exit codes are unaffected either way,
+  and a `schema_version` 2 report (no `unmeasured` key) is unaffected by the
+  flag too.
 - `@pytest.mark.no_blocking(threshold_ms=N)` — a per-test blocking threshold
   that overrides the session-wide `loopguard_threshold_ms` ini value, in
   either direction. A bad value (non-numeric, negative, NaN, inf, a bool, a
