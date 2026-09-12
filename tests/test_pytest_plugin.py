@@ -429,6 +429,69 @@ class TestScopedWindowInternals:
         detector.exit_only()
         assert detector.suppressed, "the outer exit did not suppress the rest"
 
+    def test_loop_clock_watermark_keeps_the_drift_check_running(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`_resume_measurement()` must move the loop clock's baseline too.
+
+        `_measure_tick`'s drift check is guarded by
+        `if loop_start is not None`, so a watermark that moves only the
+        real clock does not misfire -- it silently stops checking, for
+        every measurement after the first window in the test. Both halves
+        below then read `clean`, and the whole suite stays green.
+
+        So the proof that the check still runs has to be a divergence it
+        still catches (second half). The first half is the other half of
+        the same claim: under clocks that agree, a window boundary is not
+        itself read as divergence -- which is what a watermark that moved
+        only one clock, or neither, would do.
+        """
+        real = _FakeClock()
+        monkeypatch.setattr(pytest_plugin, "_REAL_MONOTONIC", real)
+        # The identity check sits above the drift check and returns as
+        # soon as it sees a replaced time.monotonic, so the fake has to be
+        # the real clock too or the drift branch is unreachable.
+        monkeypatch.setattr(time, "monotonic", real)
+
+        loop_clock = _FakeClock()
+        monkeypatch.setattr(pytest_plugin, "_loop_time", loop_clock)
+
+        def measure_after_a_window(*, loop_reads_at_the_end: float) -> BlockingDetector:
+            """One tick: a 200ms pause window, then 50ms measured after it."""
+            detector = BlockingDetector(threshold_ms=1000.0)
+            detector._running = True
+            detector._tick_real_start = 0.0
+            detector._tick_loop_start = 0.0
+            # As the enter-poll would have left it; with the tick already
+            # consumed that poll is a no-op, so this needs no monitor task.
+            detector._tick_consumed = True
+
+            real.now = loop_clock.now = 0.2
+            detector.enter_pause()
+            real.now = loop_clock.now = 0.4
+            detector.exit_pause()
+
+            real.now = 0.45
+            loop_clock.now = loop_reads_at_the_end
+            detector._measure_tick()
+            return detector
+
+        agreeing = measure_after_a_window(loop_reads_at_the_end=0.45)
+        # 50ms of lag against a 1000ms threshold: under the bar, so the
+        # measurement reaches the clock checks instead of returning at the
+        # blocking branch above them.
+        assert agreeing.blocking_events == []
+        assert not agreeing.clock_untrusted, (
+            "the window itself was read as loop-clock divergence"
+        )
+
+        # The loop's own clock stops advancing after the window closes:
+        # 50ms of real time it cannot see, ten times the drift tolerance.
+        diverging = measure_after_a_window(loop_reads_at_the_end=0.4)
+        assert diverging.clock_untrusted, (
+            "the drift check stopped running after the window closed"
+        )
+
     async def test_leaving_a_pause_re_arms_the_consumed_tick(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
