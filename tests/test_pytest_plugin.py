@@ -475,6 +475,32 @@ class TestPluginHygiene:
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1)
 
+    def test_terminal_summary_silent_for_a_suite_that_never_opts_in(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """pytest_terminal_summary must print nothing for an un-instrumented
+        suite.
+
+        The hook runs in every project that installs this package (it is a
+        pytest11 entry point), not only ones that use
+        @pytest.mark.no_blocking or loopguard_all_async. Nothing previously
+        pinned that a suite which never opts into either stays silent.
+        """
+        pytester.makepyfile("""
+            def test_plain():
+                assert 1 == 1
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1)
+        stdout = result.stdout.str()
+        assert "unmeasured" not in stdout
+        assert not any(line.startswith("loopguard:") for line in stdout.splitlines())
+
     def test_sync_test_with_marker_warns(self, pytester: pytest.Pytester) -> None:
         """The marker on a sync test warns instead of silently no-opping."""
         pytester.makepyfile("""
