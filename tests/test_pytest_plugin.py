@@ -289,6 +289,44 @@ class TestBlockingDetector:
             for record in caplog.records
         )
 
+    async def test_clock_untrusted_and_blocking_events_can_both_be_true(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The state the precedence rule in `wrapped()` exists to handle --
+        a genuine block *and* an untrusted clock, both true at once -- is
+        directly reachable, closing a gap `TestClockTampering`'s end-to-end
+        equivalent cannot: a verdict of "blocked" there cannot by itself
+        prove `clock_untrusted` was also True, since blocking_events alone
+        already decides that verdict.
+
+        Every clock-tampering scenario elsewhere in this file patches
+        `time.monotonic` from inside the running test, always after
+        `start()`'s own fast-path identity check has already run with the
+        clock still genuine -- and `_measure_tick` never reaches its own
+        identity check on an over-threshold tick either, since it returns
+        as soon as it appends to `blocking_events`. So for a tick that
+        blocks past its threshold, `start()`'s fast path is the *only*
+        place `clock_untrusted` can become True: tamper before `start()`
+        runs, as this test does, or it never does. Deleting that fast
+        path leaves every other test in this file green (verified: it
+        does) but turns this assertion false.
+        """
+        real_monotonic = time.monotonic
+        frozen = real_monotonic()
+        monkeypatch.setattr(time, "monotonic", lambda: frozen)
+
+        detector = BlockingDetector(threshold_ms=10.0)
+        await detector.start()  # the clock is already tampered when this runs
+
+        time.sleep(0.05)  # genuine block, well past the 10ms threshold
+
+        await detector.stop()
+
+        assert detector.blocking_events, "the genuine block was not measured"
+        assert detector.clock_untrusted, (
+            "start()'s fast-path identity check did not see the already-tampered clock"
+        )
+
 
 class TestPytestPluginIntegration:
     """Integration tests for pytest plugin using pytester."""
@@ -1312,6 +1350,60 @@ class TestClockTampering:
         result = pytester.runpytest_subprocess(timeout=30)
         assert result.ret == 0
         assert "1 unmeasured" in result.stdout.str()
+
+    def test_clock_already_tampered_when_start_runs_still_reports_blocked(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The precedence rule -- positive evidence beats an untrusted
+        clock -- must hold even when the clock was untrusted from the
+        very first measurement `start()` ever takes.
+
+        Every other test in this class patches `time.monotonic` *inside*
+        the test body, which only ever runs after `detector.start()` has
+        already returned -- so none of them reach `start()`'s own cheap
+        identity check (`if time.monotonic is not _REAL_MONOTONIC` at the
+        top of `start()`) with the patch already live. A fixture used by
+        the test patches it during setup, before `wrapped()` ever calls
+        `start()`, so this is the one test where `clock_untrusted` is
+        already `True` before a single tick has been measured. A genuine
+        block past the threshold must still win `"blocked"`: a sample that
+        never ran is not evidence of absence, but an observed stall is
+        evidence of presence, regardless of how little the clock can be
+        trusted otherwise.
+
+        Deleting the identity check from `start()` entirely, or inverting
+        the precedence in `wrapped()` so an untrusted clock beats an
+        observed block, both leave every other test in this file green --
+        this is the one that goes red for either mutation.
+        """
+        pytester.makepyfile("""
+            import time
+            import pytest
+
+            @pytest.fixture
+            def clock_already_tampered(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+
+            @pytest.mark.no_blocking
+            async def test_tampered_before_start_but_blocks(clock_already_tampered):
+                time.sleep(0.2)  # genuine block, clock already tampered
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest_subprocess(
+            "--loopguard-report=loopguard.json", timeout=30
+        )
+        # A blocked verdict fails by design, same as any other blocked test.
+        result.assert_outcomes(failed=1)
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        [record] = report["tests"]
+        assert record["verdict"] == "blocked"
 
 
 class TestPerTestThreshold:
