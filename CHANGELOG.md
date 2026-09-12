@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-09-12)
+
+A liveness fix for the pytest plugin — it could wedge an entire test run with
+no error message — plus a third report verdict for a test the plugin could not
+honestly measure, and a per-test blocking threshold. All three came from one
+field report against 0.7.0 across a ~5450-test suite.
 
 ### Fixed
 
@@ -47,8 +52,7 @@
   nothing unmeasured, so an older report reads the same). The top-level
   `status` enum is unchanged (`"blocked"` / `"clean"`) so every
   already-released `loopguard` binary keeps gating correctly. An unmeasured
-  test
-  emits one `PytestWarning` and is named in one `pytest_terminal_summary`
+  test emits one `PytestWarning` and is named in one `pytest_terminal_summary`
   line; it never fails on its own. `loopguard report` prints the unmeasured
   count and gains an opt-in `--require-measured` flag that exits 2 when any
   test was unmeasured — the default exit codes are unaffected either way,
