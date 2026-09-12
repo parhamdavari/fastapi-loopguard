@@ -864,7 +864,7 @@ class TestPerTestThreshold:
     are only ever tested for `is not None` in pytest_plugin.py (lines 210,
     212) -- marker args and kwargs are never read. Every test below either
     demonstrates that gap (and must fail against the unfixed source) or, for
-    the two marked explicitly, documents behavior that is already correct
+    the one marked explicitly, documents behavior that is already correct
     today.
     """
 
@@ -927,8 +927,14 @@ class TestPerTestThreshold:
     def test_override_raises_the_bar_under_loopguard_all_async(
         self, pytester: pytest.Pytester
     ) -> None:
-        """The override must also apply when the test is instrumented via
-        loopguard_all_async rather than a bare marker.
+        """The marker override still governs when loopguard_all_async is
+        also on: the option does not stomp an explicit per-test threshold.
+
+        The marker here is explicit, so `pytest_runtest_call` takes the
+        `explicit = True` path regardless of all-async; all-async plays no
+        part in whether this test is instrumented. It is enabled anyway to
+        prove the override survives that configuration, not to exercise the
+        all-async instrumentation path itself.
 
         Today the marker's kwargs are never read, so the ini threshold
         (10ms) still governs and the block is flagged instead of passing.
@@ -1126,9 +1132,8 @@ class TestPerTestThreshold:
     def test_bad_value_fails_only_that_test_not_the_whole_session(
         self, pytester: pytest.Pytester
     ) -> None:
-        """Validation must run per-test, before detector.start(), so one bad
-        marker value fails only its own test and a healthy test alongside it
-        still runs and passes.
+        """A bad marker value must fail only its own test, not the whole
+        session: a healthy test in the same file still runs and passes.
 
         Today the bad value is silently ignored on both tests, so both pass;
         the desired outcome is exactly one failure and one pass.
