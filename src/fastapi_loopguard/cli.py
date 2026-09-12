@@ -121,6 +121,16 @@ def _tests_count(report: dict[str, Any]) -> int | None:
     return int(count) if _is_number(count) else None
 
 
+def _unmeasured_count(report: dict[str, Any]) -> int | None:
+    """The report's `totals.unmeasured` (schema_version 3+), or None when
+    absent, not a number, or the report predates the concept entirely."""
+    totals = report.get("totals")
+    if not isinstance(totals, dict):
+        return None
+    count = totals.get("unmeasured")
+    return int(count) if _is_number(count) else None
+
+
 def _summary_line(report: dict[str, Any], blocked: bool) -> str:
     totals = report.get("totals")
     totals = totals if isinstance(totals, dict) else {}
@@ -205,6 +215,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "instead of the default exit 2"
         ),
     )
+    report.add_argument(
+        "--require-measured",
+        action="store_true",
+        dest="require_measured",
+        help=(
+            "exit 2 if any test's event loop clock could not be trusted "
+            "(totals.unmeasured > 0, schema_version 3+); the default exit "
+            "code is unaffected by an unmeasured test either way"
+        ),
+    )
     return parser
 
 
@@ -225,13 +245,29 @@ def main(argv: list[str] | None = None) -> int:
         print(f"loopguard: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
+    unmeasured = _unmeasured_count(report)
     if not args.quiet:
         print(_summary_line(report, blocked))
         for line in _flagged_lines(report):
             print(line)
+        if unmeasured:
+            print(
+                f"loopguard: {unmeasured} test(s) unmeasured -- event loop "
+                "clock untrustworthy, blocking may be undercounted"
+            )
 
     if blocked:
         return EXIT_BLOCKED
+
+    # Opt-in: an unmeasured test does not change the default exit code (see
+    # above) but a caller that wants a hard guarantee can ask for one.
+    if args.require_measured and unmeasured:
+        print(
+            f"loopguard: {unmeasured} test(s) had an untrustworthy event "
+            "loop clock and were not measured (--require-measured)",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
 
     # A clean verdict from a run that instrumented zero tests is not
     # evidence the suite is clean — it is a setup failure (misconfigured
