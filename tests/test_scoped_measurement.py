@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -56,6 +57,15 @@ _TIGHT_ALL_ASYNC_INI = """
     asyncio_mode = auto
     loopguard_threshold_ms = 10
     loopguard_all_async = true
+"""
+
+# The route-unit end-to-end proof runs at the shipped default threshold:
+# building the app costs ~110ms and the request it brackets costs ~1ms, so
+# neither side of that comparison is close to 50ms.
+_DEFAULT_INI = """
+    [pytest]
+    asyncio_mode = auto
+    loopguard_threshold_ms = 50
 """
 
 
@@ -697,3 +707,216 @@ class TestScopedMeasurementReport:
         assert record["verdict"] == "clean"
         assert record["events"] == []
         assert record["hints"] == []
+
+
+# A real FastAPI app, built the way the field report's 55 tests build one:
+# inside the test body, per test. ~110ms of Pydantic validator and OpenAPI
+# schema construction, none of which recurs in the deployed service, which
+# builds the app once at process startup.
+_APP_FACTORY_SOURCE = '''
+"""A route-unit suite's app factory, of the shape issue #85 describes."""
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+
+class Address(BaseModel):
+    street: str
+    city: str
+    postcode: str
+    country: str = "NL"
+
+
+class Profile(BaseModel):
+    display_name: str
+    bio: str | None = None
+    address: Address
+    tags: list[str] = []
+
+
+class User(BaseModel):
+    id: int
+    email: str
+    profile: Profile
+    scores: dict[str, float] = {}
+    active: bool = True
+
+
+class Order(BaseModel):
+    id: int
+    user: User
+    total: float
+    lines: list[dict[str, str]] = []
+
+
+class Invoice(BaseModel):
+    id: int
+    order: Order
+    paid: bool = False
+
+
+class Report(BaseModel):
+    generated_for: User
+    invoices: list[Invoice] = []
+    totals: dict[str, float] = {}
+
+
+MODELS = [Address, Profile, User, Order, Invoice, Report]
+
+
+def create_app():
+    """Build the app: Pydantic validators plus the OpenAPI schema."""
+    app = FastAPI()
+
+    for index, model in enumerate(MODELS * 30):
+        async def read(item_id: int):
+            return {"item_id": item_id}
+
+        app.get(f"/g{index}/{{item_id}}", response_model=model)(read)
+
+        async def write(payload: model):
+            return payload
+
+        app.post(f"/g{index}", response_model=model)(write)
+
+    @app.get("/health")
+    async def health():
+        return {"ok": True}
+
+    app.openapi()
+    return app
+'''
+
+
+class TestRouteUnitSuiteRegression:
+    """The end-to-end proof for #85, in the shape the report describes.
+
+    A route-unit test builds a fresh app in its own body and then issues one
+    clean request. The request is what the test is about; the construction
+    is not. Today the plugin measures both and fails the test.
+
+    Every test here uses `runpytest_subprocess`, never the in-process
+    `runpytest` used elsewhere in this file. Pytester restores `sys.modules`
+    after each in-process run, so a second run that imports FastAPI ends up
+    holding routes built against one copy of `starlette.routing` and
+    comparing them against another copy's `Match` enum: no route ever
+    matches and every request 307s to its own path plus a slash. That is an
+    artifact of nesting sessions, nothing to do with loopguard, and a fresh
+    interpreter per run removes it.
+    """
+
+    def test_app_built_in_the_test_body_is_flagged_today(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """Characterization test: this is the false positive itself.
+
+        Passes today and must keep passing -- it is what makes the next
+        test meaningful. Nothing here blocks a handler; the entire stall is
+        app construction, and the request that follows is genuinely clean.
+        """
+        pytester.syspathinsert()
+        pytester.makepyfile(appfactory=_APP_FACTORY_SOURCE)
+        pytester.makepyfile("""
+            import httpx
+            import pytest
+
+            from appfactory import create_app
+
+            @pytest.mark.no_blocking
+            async def test_health_route():
+                app = create_app()
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://testserver"
+                ) as client:
+                    response = await client.get("/health")
+                assert response.status_code == 200
+        """)
+        pytester.makeini(_DEFAULT_INI)
+
+        result = pytester.runpytest_subprocess("-v", timeout=60)
+        result.assert_outcomes(failed=1)
+        assert "Event loop blocking detected" in result.stdout.str()
+
+    def test_scoping_construction_with_pause_clears_the_false_positive(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The same test, with construction scoped out, passes.
+
+        One line changed against the test above. The request is still fully
+        measured: a handler that blocked would still fail this test.
+        """
+        pytester.syspathinsert()
+        pytester.makepyfile(appfactory=_APP_FACTORY_SOURCE)
+        pytester.makepyfile("""
+            import httpx
+            import pytest
+
+            from appfactory import create_app
+            from fastapi_loopguard.pytest_plugin import loopguard_pause
+
+            @pytest.mark.no_blocking
+            async def test_health_route():
+                with loopguard_pause():
+                    app = create_app()
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://testserver"
+                ) as client:
+                    response = await client.get("/health")
+                assert response.status_code == 200
+        """)
+        pytester.makeini(_DEFAULT_INI)
+
+        result = pytester.runpytest_subprocess("-v", timeout=60)
+        result.assert_outcomes(passed=1, warnings=0)
+
+    def test_a_blocking_handler_inside_the_measured_request_still_flags(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """Scoping construction out must not scope the handler out.
+
+        The handler under test blocks for 200ms; the app is built inside a
+        `loopguard_pause()` exactly as above. The verdict has to be
+        `blocked`, and on the handler's stall, not the construction's.
+        """
+        pytester.syspathinsert()
+        pytester.makepyfile(appfactory=_APP_FACTORY_SOURCE)
+        pytester.makepyfile("""
+            import time
+
+            import httpx
+            import pytest
+
+            from appfactory import create_app
+            from fastapi_loopguard.pytest_plugin import loopguard_pause
+
+            @pytest.mark.no_blocking
+            async def test_slow_handler():
+                with loopguard_pause():
+                    app = create_app()
+
+                    @app.get("/slow")
+                    async def slow():
+                        time.sleep(0.2)
+                        return {"ok": True}
+
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://testserver"
+                ) as client:
+                    response = await client.get("/slow")
+                assert response.status_code == 200
+        """)
+        pytester.makeini(_DEFAULT_INI)
+
+        result = pytester.runpytest_subprocess(
+            "--loopguard-report=loopguard.json", timeout=60
+        )
+        result.assert_outcomes(failed=1)
+        assert "Event loop blocking detected" in result.stdout.str()
+
+        report = _report(pytester)
+        (record,) = report["tests"]
+        assert record["verdict"] == "blocked"
+        assert re.search(r"max lag: [\d.]+ms", result.stdout.str())
