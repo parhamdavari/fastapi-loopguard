@@ -43,9 +43,14 @@ _SCHEMA_PATH = _REPO_ROOT / "docs" / "loopguard-report.schema.json"
 
 # 10ms is the threshold the issue's acceptance criteria name, against a
 # 200ms block inside the window: a 20x gap, so the block cannot be missed.
-# Every test using it keeps the *measured* region down to a short await
-# doing nothing, since a tight threshold is only free for tests asserting
-# that blocking IS detected (CLAUDE.md).
+# It is reserved for the tests that assert blocking IS detected, where a
+# threshold that is too tight can only ever cause the assertion to hold --
+# never to fail. CLAUDE.md: a tight threshold is free there and
+# unaffordable anywhere a test asserts a *clean* verdict, because a clean
+# verdict asserts that nothing stalled the loop, which is not something a
+# test controls. An ordinary generational GC pass in this suite measures
+# 4.3-17.8ms under coverage, and 10ms against a 5ms sampling interval
+# leaves a tick about 15ms of headroom.
 _TIGHT_INI = """
     [pytest]
     asyncio_mode = auto
@@ -56,6 +61,28 @@ _TIGHT_ALL_ASYNC_INI = """
     [pytest]
     asyncio_mode = auto
     loopguard_threshold_ms = 10
+    loopguard_all_async = true
+"""
+
+# Every clean-verdict test uses this instead: 100ms leaves a GC pass five
+# times its worst measured cost before it can fail a test that did nothing
+# wrong, while the 200ms block each of those tests scopes out is still 2x
+# over the bar -- so a window that failed to scope it out still fails the
+# test, and none of them proves any less than it did at 10ms. This is the
+# failure mode that broke test_clean_strict_response_carries_diagnostic_
+# headers once already, and that reproduced here as
+# test_same_helper_passes_with_the_gate_on_and_off failing once in ten
+# full-suite runs under coverage plus background load.
+_GENEROUS_INI = """
+    [pytest]
+    asyncio_mode = auto
+    loopguard_threshold_ms = 100
+"""
+
+_GENEROUS_ALL_ASYNC_INI = """
+    [pytest]
+    asyncio_mode = auto
+    loopguard_threshold_ms = 100
     loopguard_all_async = true
 """
 
@@ -136,7 +163,7 @@ class TestLoopguardPause:
     def test_block_inside_pause_is_not_charged(self, pytester: pytest.Pytester) -> None:
         """The 55-test case from the field report.
 
-        A 200ms block inside the window, under a 10ms threshold, passes.
+        A 200ms block inside the window, under a 100ms threshold, passes.
         """
         pytester.makepyfile("""
             import asyncio
@@ -153,7 +180,7 @@ class TestLoopguardPause:
                     time.sleep(0.2)
                 await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -183,7 +210,7 @@ class TestLoopguardPause:
                 with loopguard_pause():
                     time.sleep(0.2)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -282,7 +309,7 @@ class TestLoopguardPause:
                     await asyncio.sleep(0.02)
                 await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -342,7 +369,7 @@ class TestLoopguardPause:
                 time.sleep(0.2)
                 await asyncio.sleep(0.02)
         """)
-        pytester.makeini(_TIGHT_ALL_ASYNC_INI)
+        pytester.makeini(_GENEROUS_ALL_ASYNC_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, failed=1)
@@ -375,7 +402,7 @@ class TestLoopguardOnly:
                 with loopguard_only():
                     await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -467,7 +494,7 @@ class TestLoopguardOnly:
                 time.sleep(0.2)
                 await asyncio.sleep(0.02)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -522,7 +549,7 @@ class TestLoopguardOnly:
                 time.sleep(0.2)
                 await asyncio.sleep(0.02)
         """)
-        pytester.makeini(_TIGHT_ALL_ASYNC_INI)
+        pytester.makeini(_GENEROUS_ALL_ASYNC_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, failed=1)
@@ -625,7 +652,7 @@ class TestScopedMeasurementNoOps:
             async def test_uses_the_shared_helper():
                 await build_app()
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         gate_off = pytester.runpytest("-v")
         gate_off.assert_outcomes(passed=1, warnings=0)
@@ -706,7 +733,7 @@ class TestScopedMeasurementInSpawnedTasks:
                 await asyncio.create_task(build_in_a_task())
                 await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -730,7 +757,7 @@ class TestScopedMeasurementReport:
                     time.sleep(0.2)
                 await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("--loopguard-report=loopguard.json")
         result.assert_outcomes(passed=1)
