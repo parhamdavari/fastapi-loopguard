@@ -96,6 +96,16 @@ still fails the test — `loopguard_pause()` around the request itself is a
 silenced test wearing a different hat, and `allow_blocking` is the honest
 spelling of that.
 
+`loopguard_only()` is the inverse, and it takes the rest of the test with
+it. Everything after the window is out of scope until another window
+opens — not just the lines below it in the same function, but the rest of
+the test, whichever function it runs in. A shared helper that opens a
+`loopguard_only()` window therefore stops measuring its caller's test from
+the moment it returns, and nothing at the call site shows that. Put
+`loopguard_only()` in the test body, where a reader can see what it covers;
+in a helper, reach for `loopguard_pause()`, which gives back exactly what
+it took.
+
 ## The `loopguard` command
 
 Installing the package also installs a `loopguard` console script, for an

@@ -558,6 +558,16 @@ def loopguard_only() -> Iterator[None]:
     test after it is suppressed; a second window reopens without clearing,
     so what an earlier one found still fails the test. A no-op, raising and
     warning nothing, when the plugin is not instrumenting the test.
+
+    **Suppressing the rest of the test is the whole point of it, and it
+    reaches past the block.** Everything after the window is out of scope
+    until another window opens -- not merely the lines below it in the same
+    function, but the rest of the test, whichever function it runs in. So a
+    shared helper that opens one of these takes its caller's test out of
+    scope from the moment the helper returns, and nothing at the call site
+    shows that. Prefer `loopguard_pause()` in a helper, which gives back
+    exactly what it took; keep `loopguard_only()` in the test body, where a
+    reader can see what it covers.
     """
     detector = _ACTIVE_DETECTOR.get()
     if detector is None:
