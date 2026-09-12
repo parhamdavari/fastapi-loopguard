@@ -405,6 +405,44 @@ class TestLoopguardOnly:
         result.assert_outcomes(failed=1)
         assert "Event loop blocking detected" in result.stdout.str()
 
+    def test_only_window_block_without_trailing_await_still_flags(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The `only` mirror of the pause manager's no-trailing-await case.
+
+        `test_only_flags_blocking_inside_the_window` above only holds
+        because it awaits inside the window after the block, which lets the
+        monitor take a turn. A real handler is under no obligation to yield
+        there -- an `httpx.ASGITransport` request does not -- so the window
+        has to stand on its own.
+
+        Entering re-armed the tick and nothing measures it during the
+        block; unless leaving banks that tick *before* it raises
+        suppression, `stop()`'s final poll finds the window already closed
+        and measures nothing. A 200ms stall inside the very region the user
+        asked to measure, scored clean.
+        """
+        pytester.makepyfile("""
+            import time
+
+            import pytest
+
+            from fastapi_loopguard.pytest_plugin import loopguard_only
+
+            @pytest.mark.no_blocking
+            async def test_only_window_block_no_trailing_await():
+                # No await anywhere inside or after the window: leaving it
+                # is the only chance to measure the stall.
+                with loopguard_only():
+                    time.sleep(0.2)
+        """)
+        pytester.makeini(_TIGHT_INI)
+
+        result = pytester.runpytest("--loopguard-report=loopguard.json")
+        result.assert_outcomes(failed=1)
+        assert "Event loop blocking detected" in result.stdout.str()
+        assert _max_lag_ms(_report(pytester)) > 100.0
+
     def test_only_suppresses_blocking_after_the_window(
         self, pytester: pytest.Pytester
     ) -> None:

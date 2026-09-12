@@ -373,9 +373,19 @@ class BlockingDetector:
         self._only_depth += 1
 
     def exit_only(self) -> None:
-        """Close a `loopguard_only()` window and suppress the rest of the test."""
+        """Close a `loopguard_only()` window and suppress the rest of the test.
+
+        Banks the in-window portion of the in-flight tick *before* raising
+        the suppression, mirroring `enter_pause()` on the other side. This
+        is the only transition into suppression that has something left to
+        measure: the enter re-baselined the tick to the window's start, so
+        a window that blocks and returns without ever awaiting has nothing
+        else that would ever measure it -- `stop()`'s own poll runs after
+        the window is closed and is suppressed like any other.
+        """
         self._only_depth -= 1
         if self._only_depth == 0:
+            self.poll()
             self._only_closed = True
 
     def _resume_measurement(self) -> None:
