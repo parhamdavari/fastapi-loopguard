@@ -540,6 +540,53 @@ class TestLoopguardOnly:
         assert "Event loop blocking detected" in result.stdout.str()
         assert _max_lag_ms(_report(pytester)) > 100.0
 
+    def test_exception_inside_only_still_closes_the_window(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The manager must use try/finally, for the opposite reason.
+
+        `loopguard_pause()`'s mirror of this test fails loudly without the
+        try/finally: measurement stays suppressed and a real stall goes
+        unreported. On this side the failure is the other direction. An
+        escaping exception leaves the window never closed, so the rest of
+        the test stays *measured* -- teardown the author deliberately put
+        out of scope starts failing the test, and the manager's promise
+        that "only this window is measured" holds right up until something
+        inside the window raises.
+
+        So the assertion is that the promise survives the exception: the
+        200ms teardown stall after the window is still out of scope.
+        Nothing here depends on a timing margin -- a closed
+        `loopguard_only()` window suppresses every later measurement
+        outright -- but the awaited region inside the window is measured,
+        so this runs on the generous threshold like every other
+        clean-verdict test in this file.
+        """
+        pytester.makepyfile("""
+            import asyncio
+            import time
+
+            import pytest
+
+            from fastapi_loopguard.pytest_plugin import loopguard_only
+
+            @pytest.mark.no_blocking
+            async def test_raises_inside_then_blocks_in_teardown():
+                with pytest.raises(RuntimeError):
+                    with loopguard_only():
+                        await asyncio.sleep(0.01)
+                        raise RuntimeError("the request under test failed")
+                # Teardown, which loopguard_only() took out of scope.
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini(_GENEROUS_INI)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=0)
+        assert "Event loop blocking detected" not in result.stdout.str()
+
     def test_only_under_loopguard_all_async(self, pytester: pytest.Pytester) -> None:
         """The `only` mirror of the pause manager's all-async case.
 
