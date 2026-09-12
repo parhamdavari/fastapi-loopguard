@@ -429,6 +429,58 @@ class TestScopedWindowInternals:
         detector.exit_only()
         assert detector.suppressed, "the outer exit did not suppress the rest"
 
+    async def test_active_detector_is_cleared_after_an_instrumented_test(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """`wrapped()` must reset `_ACTIVE_DETECTOR` from its token (#85).
+
+        The context variable is set immediately before awaiting the test
+        and reset in the same finally. Deleting that reset leaves every
+        end-to-end test in this repo green: pytest runs each test
+        coroutine in a Task, which gets a *copy* of the context, so
+        nothing the wrapper sets leaks anywhere a later test could see it.
+        A left-behind detector is only reachable from inside that same
+        context -- which is exactly where a later `loopguard_pause()` in a
+        no-longer-instrumented helper would find it.
+
+        So the wrapper is driven here directly, on a real collected item,
+        and `wrapped()` is *awaited* rather than run as a task: awaiting a
+        coroutine shares the caller's context, so this test can see what
+        the wrapper left in it. Reading `_ACTIVE_DETECTOR` from a test is
+        the point of this one; the criterion is about that variable.
+
+        The inner test raises its own threshold rather than relying on the
+        default: it asserts a clean verdict, and nothing about this test is
+        meant to depend on how busy the machine is.
+        """
+        item = pytester.getitem(
+            """
+            import pytest
+
+            from fastapi_loopguard import pytest_plugin
+
+            seen = []
+
+            @pytest.mark.no_blocking(threshold_ms=5000)
+            async def test_inner():
+                seen.append(pytest_plugin._ACTIVE_DETECTOR.get())
+            """,
+            "test_inner",
+        )
+        assert isinstance(item, pytest.Function)
+        assert pytest_plugin._ACTIVE_DETECTOR.get() is None
+
+        pytest_plugin.pytest_runtest_call(item)
+        await item.obj()
+
+        (published,) = item.module.seen
+        assert isinstance(published, BlockingDetector), (
+            "the test did not see a detector, so this proves nothing about the reset"
+        )
+        assert pytest_plugin._ACTIVE_DETECTOR.get() is None, (
+            "the detector outlived the test it was instrumenting"
+        )
+
     def test_loop_clock_watermark_keeps_the_drift_check_running(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
