@@ -21,22 +21,39 @@ Harness mode (for CI gates over AI-generated or unfamiliar code):
 
     Opt a test out with @pytest.mark.allow_blocking. Both options also
     exist as CLI flags: --loopguard-all-async, --loopguard-report=PATH.
+
+Scoping measurement to part of a test:
+    from fastapi_loopguard.pytest_plugin import loopguard_only, loopguard_pause
+
+    async def test_route(client):
+        with loopguard_pause():     # slow setup, not a handler stall
+            app = create_app()
+        resp = await client.get("/x")
+
+    Both managers are synchronous, and complete no-ops in a test the
+    plugin is not instrumenting, so a shared helper can use them either
+    way.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import json
 import logging
 import math
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import pytest
 
 from .hints import hint_lines
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 logger = logging.getLogger("fastapi_loopguard")
 
@@ -81,6 +98,23 @@ ALLOW_MARKER_NAME = "allow_blocking"
 
 # Per-session records for the machine-readable report
 _REPORT_KEY: pytest.StashKey[list[dict[str, Any]]] = pytest.StashKey()
+
+
+def _loop_time() -> float | None:
+    """The running loop's own clock, or None when there is no loop.
+
+    Only ever compared against another reading of the same clock, never
+    against the real one on its own -- see `_measure_tick`. Returns None
+    off the loop, which the scoped-measurement managers can reach: a
+    context copy carrying the detector travels into a worker thread
+    (`asyncio.to_thread`), and a helper that pauses there has no loop of
+    its own to read.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+    return loop.time()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -160,6 +194,33 @@ class BlockingDetector:
         self._tick_loop_start: float | None = None
         self._tick_consumed = False
         self._clock_untrusted = False
+        # Scoped-measurement window state (#85). It lives on the detector
+        # rather than in a context variable of its own, so a task spawned
+        # by the test -- which gets a copy of the context pointing at this
+        # same object -- scopes the same window its parent does.
+        self._pause_depth = 0
+        self._only_depth = 0
+        self._only_opened = False
+        self._only_closed = False
+        # Real- and loop-clock baselines that a measurement is taken
+        # against once a window ends, so the tick straddling that point
+        # contributes only its post-window portion. Both clocks, always
+        # together: shifting the real baseline alone would leave
+        # _measure_tick's drift check reading the whole window as loop
+        # clock divergence and reporting the test unmeasured.
+        self._watermark_real: float | None = None
+        self._watermark_loop: float | None = None
+
+    @property
+    def suppressed(self) -> bool:
+        """Whether measurement is currently scoped out of the test (#85).
+
+        True inside a `loopguard_pause()` window and after a
+        `loopguard_only()` window has closed. A depth counter, not a
+        boolean, so a helper that pauses inside its caller's pause does
+        not un-pause the caller early.
+        """
+        return self._pause_depth > 0 or self._only_closed
 
     @property
     def clock_untrusted(self) -> bool:
@@ -237,10 +298,26 @@ class BlockingDetector:
         punish.
         """
         assert self._tick_real_start is not None
+        if self.suppressed:
+            # Inside a loopguard_pause(), or after a loopguard_only()
+            # window closed: nothing is recorded, and the clock is not
+            # judged either. The tick is deliberately left *unconsumed* --
+            # leaving the window re-baselines it against a watermark, so
+            # its post-window portion is still measured (#85).
+            return
         self._tick_consumed = True
 
+        real_start = self._tick_real_start
+        loop_start = self._tick_loop_start
+        if self._watermark_real is not None and self._watermark_real > real_start:
+            # A window ended part-way through this tick: measure only what
+            # happened after it, and move BOTH clocks' baselines, or the
+            # drift check below reads the window itself as divergence.
+            real_start = self._watermark_real
+            loop_start = self._watermark_loop
+
         interval = _MONITOR_INTERVAL_SEC
-        real_elapsed = _REAL_MONOTONIC() - self._tick_real_start
+        real_elapsed = _REAL_MONOTONIC() - real_start
         lag_ms = (real_elapsed - interval) * 1000
 
         if lag_ms > self.threshold_ms:
@@ -251,10 +328,74 @@ class BlockingDetector:
             self._clock_untrusted = True
             return
 
-        if self._tick_loop_start is not None:
-            loop_elapsed = asyncio.get_running_loop().time() - self._tick_loop_start
-            if abs(real_elapsed - loop_elapsed) > _CLOCK_DRIFT_TOLERANCE_SEC:
+        if loop_start is not None:
+            loop_now = _loop_time()
+            if (
+                loop_now is not None
+                and abs(real_elapsed - (loop_now - loop_start))
+                > _CLOCK_DRIFT_TOLERANCE_SEC
+            ):
                 self._clock_untrusted = True
+
+    def enter_pause(self) -> None:
+        """Open a `loopguard_pause()` window.
+
+        Banks the pre-entry portion of the in-flight tick first: blocking
+        *before* the window is still the test's problem, and with no
+        further await it would otherwise only ever be measured by the tick
+        that resumes after the window -- where the suppression would
+        swallow it. `poll()` is itself suppressed inside an open window,
+        so a nested pause banks nothing.
+        """
+        self.poll()
+        self._pause_depth += 1
+
+    def exit_pause(self) -> None:
+        """Close a `loopguard_pause()` window; measurement resumes at zero."""
+        self._pause_depth -= 1
+        if self._pause_depth == 0:
+            self._resume_measurement()
+
+    def enter_only(self) -> None:
+        """Open a `loopguard_only()` window: measure this, and nothing else.
+
+        The first enter clears what was recorded before it. That is
+        retroactive, and safe because the pass/fail decision is taken after
+        the test body returns; a second window reopens without clearing, so
+        what the first one found survives.
+        """
+        if self._only_depth == 0:
+            if not self._only_opened:
+                self.blocking_events.clear()
+                self._only_opened = True
+            self._only_closed = False
+            self._resume_measurement()
+        self._only_depth += 1
+
+    def exit_only(self) -> None:
+        """Close a `loopguard_only()` window and suppress the rest of the test."""
+        self._only_depth -= 1
+        if self._only_depth == 0:
+            self._only_closed = True
+
+    def _resume_measurement(self) -> None:
+        """Re-baseline the in-flight tick to now, as a window ends (#85).
+
+        Two things, both load-bearing. The watermark -- real and loop
+        clocks together -- is what makes the tick straddling this point
+        contribute only its post-window portion, so the window's own stall
+        is not charged by the tick that resumes after it.
+
+        Re-arming `_tick_consumed` is what keeps that tick measurable at
+        all. The poll on entering the window consumed it, and a window that
+        ends with no further await (an `httpx.ASGITransport` request
+        completes without ever yielding to the loop) would leave `stop()`'s
+        own poll refusing to measure exactly the region the user asked to
+        measure.
+        """
+        self._watermark_real = _REAL_MONOTONIC()
+        self._watermark_loop = _loop_time()
+        self._tick_consumed = False
 
     async def stop(self) -> None:
         """Stop the blocking detector.
@@ -287,7 +428,9 @@ class BlockingDetector:
         since the monitor task is cancelled immediately after and never
         gets a turn of its own to measure it (#83). `poll()` and
         `_measure_tick()` are both synchronous, so this cannot itself be
-        interrupted by a cancellation.
+        interrupted by a cancellation. A test that ends inside a scoped
+        window records nothing there: that measurement is suppressed like
+        any other (#85).
         """
         if not self._running:
             return
@@ -331,6 +474,79 @@ class BlockingDetector:
             if not self._tick_consumed:
                 self._measure_tick()
         self._tick_real_start = None
+
+
+# The detector instrumenting the test that is currently running, or None.
+# Set by wrapped() immediately before awaiting the test and reset from its
+# token in the same finally, so an uninstrumented test -- a sync test, an
+# unmarked one with the gate off, an allow_blocking one, or no pytest
+# session at all -- never sees one, and both managers below are inert
+# there. A task spawned by the test inherits a copy of the context, which
+# points at the same detector object.
+_ACTIVE_DETECTOR: contextvars.ContextVar[BlockingDetector | None] = (
+    contextvars.ContextVar("fastapi_loopguard_active_detector", default=None)
+)
+
+
+@contextmanager
+def loopguard_pause() -> Iterator[None]:
+    """Stop measuring event loop blocking for the duration of this block.
+
+    For work that is part of the test but not part of what it is testing --
+    building an app, loading a fixture, warming a cache -- which the
+    deployed service does once at startup rather than per request::
+
+        async def test_route(client):
+            with loopguard_pause():
+                app = create_app()
+            resp = await client.get("/x")   # this is what gets measured
+
+    Blocking before the window is still charged, and blocking after it
+    still flags. Nests: a helper that pauses inside a caller's pause
+    leaves the caller's window intact. A no-op, raising and warning
+    nothing, when the plugin is not instrumenting the test.
+    """
+    detector = _ACTIVE_DETECTOR.get()
+    if detector is None:
+        yield
+        return
+
+    detector.enter_pause()
+    try:
+        yield
+    finally:
+        # try/finally: an exception escaping the window must not leave the
+        # rest of the test silently unguarded.
+        detector.exit_pause()
+
+
+@contextmanager
+def loopguard_only() -> Iterator[None]:
+    """Measure event loop blocking inside this block and nowhere else.
+
+    The inverse of `loopguard_pause()`, for a test whose setup and teardown
+    are both out of scope::
+
+        async def test_route(client):
+            app = create_app()
+            with loopguard_only():
+                resp = await client.get("/x")
+
+    The first window clears what was recorded before it and the rest of the
+    test after it is suppressed; a second window reopens without clearing,
+    so what an earlier one found still fails the test. A no-op, raising and
+    warning nothing, when the plugin is not instrumenting the test.
+    """
+    detector = _ACTIVE_DETECTOR.get()
+    if detector is None:
+        yield
+        return
+
+    detector.enter_only()
+    try:
+        yield
+    finally:
+        detector.exit_only()
 
 
 def _threshold_ms(config: pytest.Config) -> float:
@@ -499,9 +715,16 @@ def pytest_runtest_call(item: pytest.Item) -> None:
         detector = BlockingDetector(threshold_ms=threshold)
         await detector.start()
 
+        # Published here, immediately before the test runs, so that
+        # loopguard_pause()/loopguard_only() reach this detector -- and
+        # only ever from a test this wrapper is actually instrumenting
+        # (#85).
+        token = _ACTIVE_DETECTOR.set(detector)
+
         try:
             result = await original_func(*args, **kwargs)
         finally:
+            _ACTIVE_DETECTOR.reset(token)
             # Record in the finally so a test that both blocks AND fails
             # functionally still lands its "blocked" verdict in the report
             await detector.stop()

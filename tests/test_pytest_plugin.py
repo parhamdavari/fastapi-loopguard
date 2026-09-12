@@ -376,6 +376,48 @@ class TestBlockingDetector:
         assert detector.clock_untrusted, "the loop-clock divergence was not caught"
 
 
+class TestScopedWindowInternals:
+    """Unit cover for two corners of the #85 window state.
+
+    Both are driven end to end in test_scoped_measurement.py; these reach
+    the states a pytester run does not naturally produce.
+    """
+
+    def test_loop_time_is_none_off_the_event_loop(self) -> None:
+        """The drift check's second clock is optional, not assumed.
+
+        A context copy carrying the detector can travel into a worker
+        thread (`asyncio.to_thread`), where a helper that scopes its own
+        setup has no loop of its own to read -- and reading one must not
+        raise into that helper.
+        """
+        assert pytest_plugin._loop_time() is None
+
+    def test_nested_only_window_stays_open_until_the_outer_one_closes(self) -> None:
+        """A depth counter, not a boolean, on the `loopguard_only()` side too.
+
+        Driven directly rather than through pytester: only the outermost
+        enter may clear, and only the outermost exit may suppress the rest
+        of the test.
+        """
+        detector = BlockingDetector(threshold_ms=10.0)
+        detector.blocking_events.append(99.0)
+
+        detector.enter_only()
+        assert detector.blocking_events == [], "the first enter did not clear"
+        assert not detector.suppressed
+
+        detector.blocking_events.append(42.0)
+        detector.enter_only()
+        assert detector.blocking_events == [42.0], "a nested enter cleared again"
+
+        detector.exit_only()
+        assert not detector.suppressed, "the inner exit closed the outer window"
+
+        detector.exit_only()
+        assert detector.suppressed, "the outer exit did not suppress the rest"
+
+
 class TestPytestPluginIntegration:
     """Integration tests for pytest plugin using pytester."""
 
