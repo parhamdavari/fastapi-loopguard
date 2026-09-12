@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/parhamdavari/fastapi-loopguard/schemas/loopguard-report/v2.json",
+  "$id": "https://github.com/parhamdavari/fastapi-loopguard/schemas/loopguard-report/v3.json",
   "title": "LoopGuard pytest report",
-  "description": "The loopguard.json report written by the fastapi-loopguard pytest plugin when loopguard_report (ini) or --loopguard-report=PATH is set. This schema describes schema_version 2. The report contract is additive: every object here permits unknown properties so a consumer written against an older version keeps validating newer reports.",
+  "description": "The loopguard.json report written by the fastapi-loopguard pytest plugin when loopguard_report (ini) or --loopguard-report=PATH is set. This schema describes schema_version 3. The report contract is additive: every object here permits unknown properties so a consumer written against an older version keeps validating newer reports.",
   "type": "object",
   "additionalProperties": true,
   "required": ["schema_version", "status", "threshold_ms", "totals", "tests"],
@@ -10,7 +10,7 @@
     "schema_version": {
       "description": "Version of this report contract. Bumped whenever the shape changes; the $id of the matching schema carries the same number.",
       "type": "integer",
-      "const": 2
+      "const": 3
     },
     "status": {
       "description": "The run's single top-level verdict. \"blocked\" when at least one instrumented test was flagged (totals.flagged > 0), \"clean\" otherwise. A run that instrumented no tests is \"clean\" with totals.tests == 0 — nothing blocked because nothing was watched; a gate that must also insist the suite was checked reads totals.tests > 0 as well.",
@@ -37,6 +37,16 @@
           "description": "Number of instrumented tests whose verdict is \"blocked\".",
           "type": "integer",
           "minimum": 0
+        },
+        "unmeasured": {
+          "description": "Number of instrumented tests whose verdict is \"unmeasured\" -- the event loop clock could not be trusted while they ran, so blocking may have gone undetected (see testRecord.reason). Omitted when zero.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "measured": {
+          "description": "tests minus unmeasured: instrumented tests whose clock was trustworthy for the whole test, so a \"clean\" verdict among them means blocking was actually ruled out. Omitted when there is no unmeasured test to distinguish it from.",
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -61,9 +71,9 @@
           "minLength": 1
         },
         "verdict": {
-          "description": "\"blocked\" when the loop lagged past the threshold while this test ran, \"clean\" otherwise.",
+          "description": "\"blocked\" when the loop lagged past the threshold while this test ran. \"unmeasured\" when the event loop clock could not be trusted for the whole test (see reason) and no blocking was observed regardless -- positive evidence of blocking always wins the \"blocked\" verdict even under an untrusted clock. \"clean\" otherwise.",
           "type": "string",
-          "enum": ["blocked", "clean"]
+          "enum": ["blocked", "clean", "unmeasured"]
         },
         "events": {
           "description": "Measured blocking events for this test; empty for a clean verdict. The sentinel measures loop lag, not call stacks, so an event locates the stall in time, not in a call site.",
@@ -80,9 +90,14 @@
           }
         },
         "threshold_ms": {
-          "description": "The effective threshold, in milliseconds, this test was measured against: the top-level threshold_ms (session default) unless a @pytest.mark.no_blocking(threshold_ms=...) override applies to this test. Always emitted, including for a \"clean\" verdict, since events is empty by definition and would otherwise carry no evidence a different bar was used.",
+          "description": "The effective threshold, in milliseconds, this test was measured against: the top-level threshold_ms (session default) unless a @pytest.mark.no_blocking(threshold_ms=...) override applies to this test. Always emitted, including for a \"clean\" or \"unmeasured\" verdict, since events is empty by definition and would otherwise carry no evidence a different bar was used.",
           "type": "number",
           "minimum": 0
+        },
+        "reason": {
+          "description": "Why this test's verdict is \"unmeasured\" -- e.g. the event loop clock was replaced, frozen, or otherwise could not be trusted. Present on an \"unmeasured\" verdict; absent otherwise.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },

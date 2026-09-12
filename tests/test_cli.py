@@ -415,6 +415,50 @@ class TestMalformed:
         assert main(["report", _write(tmp_path, payload)]) == EXIT_ERROR
         self._assert_error(capsys)
 
+    @pytest.mark.parametrize("field", ["tests", "unmeasured"])
+    @pytest.mark.parametrize(
+        "bad_value",
+        [
+            float("nan"),
+            float("inf"),
+            -1,
+            "not-a-number",
+            [1, 2],
+            {"nested": True},
+        ],
+        ids=["nan", "infinity", "negative", "string", "list", "dict"],
+    )
+    def test_malformed_totals_count_exits_two_not_a_crash(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        field: str,
+        bad_value: Any,
+    ) -> None:
+        """A NaN/Infinity/negative/wrong-type totals.tests or
+        totals.unmeasured degrades to exit 2, never a raw traceback.
+
+        json.loads parses the bare `NaN` / `Infinity` tokens by default, and
+        `int()` raises on either (ValueError for NaN, OverflowError for
+        Infinity) -- `_unmeasured_count` used to call `int()` unconditionally
+        whenever `_is_number` said yes, and `_is_number` said yes to both,
+        so this crashed the process with a raw Python traceback and exit 1,
+        the same code as "blocking detected" -- indistinguishable to a job
+        that gates on the exit code, and a stack trace with local
+        filesystem paths to a log scraper expecting one clean line. The
+        same hole predates schema_version 3 on totals.tests. A negative
+        count is separately malformed: both fields declare `minimum: 0` in
+        the schema, so a negative value must not silently pass through
+        either.
+        """
+        totals: dict[str, Any] = {"flagged": 0, "tests": 5, "unmeasured": 1}
+        totals[field] = bad_value
+        payload = {"status": "clean", "totals": totals}
+
+        assert main(["report", _write(tmp_path, payload)]) == EXIT_ERROR
+        error = self._assert_error(capsys)
+        assert f"totals.{field}" in error
+
 
 class TestQuiet:
     """--quiet keeps the exit code and drops the output."""
@@ -518,6 +562,7 @@ class TestNoPytestImport:
             "__future__",
             "argparse",
             "json",
+            "math",
             "sys",
             "pathlib",
             "typing",

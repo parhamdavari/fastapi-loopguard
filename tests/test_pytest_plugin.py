@@ -6,6 +6,7 @@ import ast
 import asyncio
 import contextlib
 import json
+import logging
 import re
 import time
 from pathlib import Path
@@ -206,6 +207,174 @@ class TestBlockingDetector:
         assert detector.blocking_events
         assert max(detector.blocking_events) > 10.0
 
+    async def test_stop_cancelled_at_its_own_await_does_not_leak_the_monitor(
+        self,
+    ) -> None:
+        """A cancellation delivered while stop() is suspended must not be
+        able to skip cancelling the monitor task.
+
+        Reproduces a real defect: an earlier stop() opened with
+        `await asyncio.sleep(0)` before ever calling `task.cancel()`. A
+        cancellation delivered right there raised immediately and skipped
+        every line after it -- the monitor task was never told to stop,
+        orphaning it on the loop, and (in the real wrapped() path) the
+        exception would propagate past stop() before the test's report
+        record could be appended. The fix moves capturing the task,
+        clearing `_task`, flipping `_running`, and cancelling all before
+        any `await`, so cancelling stop() at its own (now only) await
+        point must still find the monitor task already told to stop.
+        """
+        detector = BlockingDetector(threshold_ms=50.0)
+        await detector.start()
+        monitor_task = detector._task
+        assert monitor_task is not None
+
+        stop_task = asyncio.create_task(detector.stop())
+        await asyncio.sleep(0)  # let stop() run up to its own first await
+        assert not stop_task.done(), "stop() finished before it could be cancelled"
+
+        stop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stop_task
+
+        # Bounded, not a fixed sleep: give the already-cancelled monitor
+        # task the turns it needs to actually finish unwinding.
+        for _ in range(50):
+            if monitor_task.done():
+                break
+            await asyncio.sleep(0)
+
+        assert monitor_task.done(), "monitor task leaked: still pending"
+        assert monitor_task.cancelled()
+        assert detector._running is False
+
+    async def test_stop_retrieves_the_monitor_exception_even_if_already_done(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """stop() must retrieve (and log) the monitor task's exception even
+        when that task already finished by raising before stop() runs.
+
+        The cancel-and-await block used to be guarded by
+        `if task is not None and not task.done()`, so an already-finished,
+        already-raised monitor task skipped the block entirely and its
+        exception was never retrieved -- asyncio surfaces that later as an
+        unattributed "Task exception was never retrieved" instead of the
+        warning this module logs.
+        """
+
+        async def _boom(self: BlockingDetector) -> None:
+            raise RuntimeError("monitor exploded")
+
+        monkeypatch.setattr(BlockingDetector, "_monitor", _boom)
+
+        detector = BlockingDetector(threshold_ms=50.0)
+        await detector.start()
+
+        # Let the patched monitor task run to completion -- it raises
+        # immediately, with nothing to await.
+        assert detector._task is not None
+        for _ in range(50):
+            if detector._task.done():
+                break
+            await asyncio.sleep(0)
+        assert detector._task.done(), "monitor task never finished raising"
+
+        with caplog.at_level(logging.WARNING, logger="fastapi_loopguard"):
+            await detector.stop()
+
+        assert any(
+            "LoopGuard blocking detector failed" in record.message
+            for record in caplog.records
+        )
+
+    async def test_clock_untrusted_and_blocking_events_can_both_be_true(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The state the precedence rule in `wrapped()` exists to handle --
+        a genuine block *and* an untrusted clock, both true at once -- is
+        directly reachable, closing a gap `TestClockTampering`'s end-to-end
+        equivalent cannot: a verdict of "blocked" there cannot by itself
+        prove `clock_untrusted` was also True, since blocking_events alone
+        already decides that verdict.
+
+        Every clock-tampering scenario elsewhere in this file patches
+        `time.monotonic` from inside the running test, always after
+        `start()`'s own fast-path identity check has already run with the
+        clock still genuine -- and `_measure_tick` never reaches its own
+        identity check on an over-threshold tick either, since it returns
+        as soon as it appends to `blocking_events`. So for a tick that
+        blocks past its threshold, `start()`'s fast path is the *only*
+        place `clock_untrusted` can become True: tamper before `start()`
+        runs, as this test does, or it never does. Deleting that fast
+        path leaves every other test in this file green (verified: it
+        does) but turns this assertion false.
+        """
+        real_monotonic = time.monotonic
+        frozen = real_monotonic()
+        monkeypatch.setattr(time, "monotonic", lambda: frozen)
+
+        detector = BlockingDetector(threshold_ms=10.0)
+        await detector.start()  # the clock is already tampered when this runs
+
+        time.sleep(0.05)  # genuine block, well past the 10ms threshold
+
+        await detector.stop()
+
+        assert detector.blocking_events, "the genuine block was not measured"
+        assert detector.clock_untrusted, (
+            "start()'s fast-path identity check did not see the already-tampered clock"
+        )
+
+    def test_drift_check_catches_a_custom_loop_clock(self) -> None:
+        """The drift check (loop.time() vs. the pinned real clock) has no
+        test of its own elsewhere: every clock-tampering scenario in this
+        file patches `time.monotonic` itself, which the (cheaper) identity
+        check in `_measure_tick` catches first -- the drift branch right
+        below it never runs for any of them. Zeroing
+        `_CLOCK_DRIFT_TOLERANCE_SEC` does not turn any of those red.
+
+        This is deliberately the one case an identity check on
+        `time.monotonic` cannot catch at all: a custom event loop whose own
+        `time()` disagrees with the real clock without `time.monotonic`
+        ever being touched (issue #83 names this alongside monkeypatch,
+        freezegun, and a C-level patcher). I could not find a way to reach
+        this branch other than actually constructing one -- a loop whose
+        `time()` is wrong is the thing the branch exists to catch, so nothing
+        short of one exercises it. `asyncio.new_event_loop()` returns a
+        plain-Python `SelectorEventLoop` with no `__slots__`, so replacing
+        the *instance's* `time` is enough; no subclass needed.
+
+        `await asyncio.sleep(interval)` inside `_monitor()` schedules its
+        wakeup via this same broken `time()` (through `call_later`), so it
+        never fires -- the tick armed at `start()` is still the pending one
+        when `stop()` runs. That does not matter here: `poll()` measures it
+        synchronously against the pinned real clock regardless, exactly as
+        it does under a frozen `time.monotonic`.
+        """
+        loop = asyncio.new_event_loop()
+        frozen_loop_time = loop.time()
+        loop.time = lambda: frozen_loop_time  # type: ignore[method-assign]
+
+        async def scenario() -> BlockingDetector:
+            detector = BlockingDetector(threshold_ms=50.0)
+            await detector.start()
+            # Real time the loop's own (frozen) clock cannot see -- large
+            # enough to clear the 5ms drift tolerance, well under the 50ms
+            # blocking threshold so this does not also trip that check.
+            time.sleep(0.015)
+            await detector.stop()
+            return detector
+
+        try:
+            detector = loop.run_until_complete(scenario())
+        finally:
+            loop.close()
+
+        assert not detector.blocking_events, "the block should stay under threshold"
+        assert detector.clock_untrusted, "the loop-clock divergence was not caught"
+
 
 class TestPytestPluginIntegration:
     """Integration tests for pytest plugin using pytester."""
@@ -265,8 +434,11 @@ class TestPytestPluginIntegration:
         """A test that blocks and returns with no trailing await still fails.
 
         This is the common shape of blocking test code. The monitor's pending
-        sleep expires during the block but never resumes, so a stop() that
-        cancels instead of draining discards the sample and scores it clean.
+        sleep expires during the block but never resumes on its own, so
+        stop() measures the in-flight tick itself (poll(), mirroring
+        SentinelMonitor.poll()) before cancelling the task -- a stop() that
+        cancelled first, with no measurement, would discard the sample and
+        score this test clean.
         """
         pytester.makepyfile("""
             import pytest
@@ -471,6 +643,32 @@ class TestPluginHygiene:
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1)
+
+    def test_terminal_summary_silent_for_a_suite_that_never_opts_in(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """pytest_terminal_summary must print nothing for an un-instrumented
+        suite.
+
+        The hook runs in every project that installs this package (it is a
+        pytest11 entry point), not only ones that use
+        @pytest.mark.no_blocking or loopguard_all_async. Nothing previously
+        pinned that a suite which never opts into either stays silent.
+        """
+        pytester.makepyfile("""
+            def test_plain():
+                assert 1 == 1
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1)
+        stdout = result.stdout.str()
+        assert "unmeasured" not in stdout
+        assert not any(line.startswith("loopguard:") for line in stdout.splitlines())
 
     def test_sync_test_with_marker_warns(self, pytester: pytest.Pytester) -> None:
         """The marker on a sync test warns instead of silently no-opping."""
@@ -843,6 +1041,13 @@ class TestReportSchema:
         below hangs pytest_plugin's unfixed BlockingDetector.stop(), and an
         in-process runpytest would wedge this repo's own suite on that
         regression instead of failing it (see TestClockTampering).
+
+        The inner suite is expected to have exactly one failing test:
+        test_blocks genuinely blocks past its threshold, and a "blocked"
+        verdict fails by design (that is the entire point of
+        @pytest.mark.no_blocking). Asserting the inner run's outcomes
+        directly, rather than decoding a bare exit code, keeps that
+        expectation visible to the next reader.
         """
         pytester.makepyfile("""
             import pytest
@@ -873,7 +1078,9 @@ class TestReportSchema:
         result = pytester.runpytest_subprocess(
             "--loopguard-report=loopguard.json", timeout=30
         )
-        assert result.ret == 0
+        # test_blocks fails (blocked verdict, by design); test_clean and the
+        # clock-tampering test both pass, the latter with one warning.
+        result.assert_outcomes(failed=1, passed=2, warnings=1)
 
         report = json.loads((pytester.path / "loopguard.json").read_text())
         jsonschema.Draft202012Validator(_schema()).validate(report)
@@ -1072,46 +1279,68 @@ class TestClockTampering:
         result = pytester.runpytest_subprocess(timeout=30)
         result.assert_outcomes(passed=1, warnings=1)
 
-    def test_clock_frozen_then_restored_is_still_unmeasured(
+    def test_block_behind_a_freeze_then_restore_is_still_caught(
         self, pytester: pytest.Pytester
     ) -> None:
-        """Drift, not identity, is what must catch this.
+        """A block that happens behind a freeze-and-restore is still
+        caught at all -- not lost along with the (undetectable) tamper.
 
-        The clock is back to normal by the time the plugin could inspect
-        `time.monotonic`, so an identity check (`time.monotonic is
-        original`) would wrongly call this trustworthy. 30ms of real time
-        passes while the loop's clock cannot see it, which a drift check
-        (real elapsed vs. the loop's own elapsed) catches regardless. The
-        threshold is generous (200ms) so this stays unmeasured, not
-        blocked — that distinction is TestClockTampering's other case.
+        This class used to assert this scenario was "unmeasured", on the
+        theory that a real-vs-loop drift check could catch a freeze even
+        after it was undone. It cannot: while the clock is frozen the loop
+        never runs, so nothing here executes to observe it, and once
+        restored every start-to-stop comparison reads the same source
+        again -- "tampered, then fully restored" and "slow but healthy"
+        produce identical measurements, by construction (see CLAUDE.md's
+        invariant 9 and FINDINGS.md). Chasing that distinction anyway is
+        what produced real false positives on this project's own
+        bounded-worst-case test pattern, documented elsewhere in this file.
+
+        This test does *not* exercise the pinned clock's own value, despite
+        its former name claiming otherwise: by the time `poll()` measures,
+        `monkeypatch.undo()` has already restored `time.monotonic`, so the
+        real clock and the loop's clock agree again -- measuring against
+        `loop.time()` instead of the pinned `_REAL_MONOTONIC` passes this
+        test exactly the same way (verified: swapping the two in
+        `_measure_tick` does not fail it). What it actually protects is
+        narrower and still worth having: a block is not silently dropped
+        just because it happened while the clock was tampered with, even
+        after the tamper itself becomes unprovable. The sibling case where
+        the pinned clock is load-bearing -- the clock is *still* frozen when
+        `poll()` runs -- is
+        `test_frozen_clock_and_real_blocking_is_blocked_not_unmeasured`
+        above; swapping the two clocks there does fail it. The block and
+        threshold are both generous (200ms over 10ms) because this asserts
+        detection, not absence of it.
         """
         pytester.makepyfile("""
             import time
-            import asyncio
             import pytest
 
             @pytest.mark.no_blocking
-            async def test_tampers_then_restores(monkeypatch):
+            async def test_tampers_then_restores_but_still_blocks(monkeypatch):
                 frozen = time.monotonic()
                 monkeypatch.setattr(time, "monotonic", lambda: frozen)
-                time.sleep(0.03)  # real time the frozen loop clock can't see
+                time.sleep(0.2)  # real block behind the freeze
                 monkeypatch.undo()
-                await asyncio.sleep(0.02)
         """)
         pytester.makeini("""
             [pytest]
             asyncio_mode = auto
-            loopguard_threshold_ms = 200
+            loopguard_threshold_ms = 10
         """)
 
         result = pytester.runpytest_subprocess(
             "--loopguard-report=loopguard.json", timeout=30
         )
-        assert result.ret == 0
+        # The block clears the threshold by a wide margin, so it fails --
+        # a "blocked" verdict fails by design, same as any other blocked
+        # test in this file.
+        result.assert_outcomes(failed=1)
 
         report = json.loads((pytester.path / "loopguard.json").read_text())
         [record] = report["tests"]
-        assert record["verdict"] == "unmeasured"
+        assert record["verdict"] == "blocked"
 
     def test_frozen_clock_and_real_blocking_is_blocked_not_unmeasured(
         self, pytester: pytest.Pytester
@@ -1123,6 +1352,10 @@ class TestClockTampering:
         clock immune to the tampering — the same mechanism the first test
         in this class depends on. That real 200ms block must still win a
         "blocked" verdict over "unmeasured".
+
+        The inner test is expected to fail: a "blocked" verdict fails by
+        design (@pytest.mark.no_blocking's whole point), and a tampered
+        clock must not become a way to dodge that gate.
         """
         pytester.makepyfile("""
             import time
@@ -1143,7 +1376,10 @@ class TestClockTampering:
         result = pytester.runpytest_subprocess(
             "--loopguard-report=loopguard.json", timeout=30
         )
-        assert result.ret == 0
+        # The single inner test genuinely blocks past its threshold, so it
+        # fails -- that is not a regression, it is the blocking gate doing
+        # its job even under a tampered clock.
+        result.assert_outcomes(failed=1)
 
         report = json.loads((pytester.path / "loopguard.json").read_text())
         [record] = report["tests"]
@@ -1170,6 +1406,60 @@ class TestClockTampering:
         result = pytester.runpytest_subprocess(timeout=30)
         assert result.ret == 0
         assert "1 unmeasured" in result.stdout.str()
+
+    def test_clock_already_tampered_when_start_runs_still_reports_blocked(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The precedence rule -- positive evidence beats an untrusted
+        clock -- must hold even when the clock was untrusted from the
+        very first measurement `start()` ever takes.
+
+        Every other test in this class patches `time.monotonic` *inside*
+        the test body, which only ever runs after `detector.start()` has
+        already returned -- so none of them reach `start()`'s own cheap
+        identity check (`if time.monotonic is not _REAL_MONOTONIC` at the
+        top of `start()`) with the patch already live. A fixture used by
+        the test patches it during setup, before `wrapped()` ever calls
+        `start()`, so this is the one test where `clock_untrusted` is
+        already `True` before a single tick has been measured. A genuine
+        block past the threshold must still win `"blocked"`: a sample that
+        never ran is not evidence of absence, but an observed stall is
+        evidence of presence, regardless of how little the clock can be
+        trusted otherwise.
+
+        Deleting the identity check from `start()` entirely, or inverting
+        the precedence in `wrapped()` so an untrusted clock beats an
+        observed block, both leave every other test in this file green --
+        this is the one that goes red for either mutation.
+        """
+        pytester.makepyfile("""
+            import time
+            import pytest
+
+            @pytest.fixture
+            def clock_already_tampered(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+
+            @pytest.mark.no_blocking
+            async def test_tampered_before_start_but_blocks(clock_already_tampered):
+                time.sleep(0.2)  # genuine block, clock already tampered
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest_subprocess(
+            "--loopguard-report=loopguard.json", timeout=30
+        )
+        # A blocked verdict fails by design, same as any other blocked test.
+        result.assert_outcomes(failed=1)
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        [record] = report["tests"]
+        assert record["verdict"] == "blocked"
 
 
 class TestPerTestThreshold:
@@ -1547,6 +1837,43 @@ class TestPerTestThreshold:
             "value was rejected -- validation must happen before "
             "detector.start() so no monitor task is ever created for it"
         )
+
+    def test_bad_marker_value_still_produces_an_unmeasured_report_record(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """#83 (comment): a test that fails marker validation must not
+        vanish from the report.
+
+        pytest.fail() in _effective_threshold_ms raises before the test's
+        own try/finally ever appends a record, so before this fix the test
+        disappeared from loopguard.json entirely: totals.tests undercounted
+        and the top-level verdict could read "clean" while a test loudly
+        failed. It must now get an unmeasured record naming the marker
+        problem, and still fail in pytest exactly as before.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking(threshold_ms="oops")
+            async def test_bad_marker():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest("-v", "--loopguard-report=loopguard.json")
+        result.assert_outcomes(failed=1)
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        assert report["totals"]["tests"] == 1
+        assert report["totals"]["unmeasured"] == 1
+        assert report["totals"]["measured"] == 0
+        [record] = report["tests"]
+        assert record["verdict"] == "unmeasured"
+        assert "threshold_ms" in record["reason"]
 
     def test_no_blocking_wins_over_allow_blocking_when_both_present(
         self, pytester: pytest.Pytester

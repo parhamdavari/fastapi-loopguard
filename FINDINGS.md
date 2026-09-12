@@ -106,6 +106,48 @@ fixed are struck through with a note, not deleted.
     request's context. Birthday bound is ~77k concurrent in-flight requests;
     accepted as unrealistic, noted here so it is a known trade.
 
+19. **The pytest plugin's clock-drift check (#83) needs a tolerance, not an
+    exact match, because uvloop's `loop.time()` is not read fresh on every
+    call.** libuv (and therefore uvloop) caches the loop's notion of "now"
+    once per iteration rather than calling the OS clock on every `time()`
+    access, so two `loop.time()` reads a few microseconds apart on a busy
+    uvloop can legitimately return the same (or a slightly stale) value even
+    with no tampering at all. `BlockingDetector` compares a tick's `loop.time()`
+    -measured elapsed against the same tick measured on the pinned real
+    clock (`_REAL_MONOTONIC`) and only distrusts the clock past one monitor
+    interval (5ms) of disagreement — comparing for exact equality would
+    false-positive on every uvloop suite on this basis alone. No test in
+    this repo runs under uvloop, so this is a reasoned default, not a
+    measurement.
+
+20. **A `time.monotonic` tamper fully undone before `BlockingDetector` next
+    runs is undetectable, and this is not closable by a cleverer check.**
+    While the clock is frozen, the event loop cannot run at all — a
+    synchronous block prevents that regardless of tampering — so nothing in
+    `pytest_plugin.py` executes during the freeze to record anything about
+    it. By the time anything of the detector's runs again, `time.monotonic`
+    may already be the real function once more, and every measurement taken
+    from that point (identity, or elapsed-since-any-earlier-checkpoint on
+    either clock) reads exactly as it would for a slow but healthy tick,
+    because both clocks are now reading the same underlying source again.
+    "Tampered, then fully restored" and "slow but healthy" are the same
+    measurement, not merely a close one — no tolerance value, drift
+    formula, or additional clock source changes that, because the
+    information needed to tell them apart was never observable in the
+    first place. A fallback that flagged any tick whose own real-clock lag
+    exceeded one monitor interval (with no drift or identity evidence at
+    all) was tried and reverted: it "closed" this gap only by also flagging
+    every sufficiently long *legitimate* block, and reproducibly
+    false-positived (~200ms) on this project's own bounded-worst-case test
+    pattern — a real, deliberate, generously-thresholded block via
+    `@pytest.mark.no_blocking(threshold_ms=...)`, exactly the case
+    documented as legitimate elsewhere in this file and in CLAUDE.md. What
+    the design keeps instead: `poll()` measures every tick against
+    `_REAL_MONOTONIC`, never `time.monotonic`, so a block that happens
+    *behind* a freeze is still caught as lag once the tick is measured —
+    the freeze itself stays invisible, but a genuine block inside it never
+    does.
+
 ## Fixed since the first draft
 
 - Adaptive mode discarding the calibrated threshold (floor pinned at the

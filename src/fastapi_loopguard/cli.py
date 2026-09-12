@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, TypeGuard
@@ -104,21 +105,63 @@ def _is_blocked(report: dict[str, Any], path: Path) -> bool:
 
 
 def _is_number(value: Any) -> TypeGuard[int | float]:
-    """True for a real JSON number (bool is an int in Python; reject it)."""
-    return isinstance(value, int | float) and not isinstance(value, bool)
+    """True for a real, finite JSON number.
+
+    bool is an int in Python, so it is rejected explicitly. NaN and
+    +/-Infinity parse as ordinary floats via `json.loads` -- Python's
+    decoder accepts the bare `NaN` / `Infinity` / `-Infinity` tokens by
+    default -- so `isinstance` alone lets them through: `int()` on either
+    then raises (`ValueError` for NaN, `OverflowError` for Infinity), and
+    neither is a usable lag, threshold, or count regardless of what `int()`
+    does with it. `math.isfinite` rejects both up front.
+    """
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def _count(value: Any) -> str:
     return str(value) if _is_number(value) else "unknown"
 
 
-def _tests_count(report: dict[str, Any]) -> int | None:
-    """The report's `totals.tests`, or None when absent or not a number."""
+def _tests_count(report: dict[str, Any], path: Path) -> int | None:
+    """The report's `totals.tests`, or None when the field is absent.
+
+    An absent field is treated leniently elsewhere (e.g. a schema_version 1
+    report may not carry it at all). A field that is *present* but not a
+    finite, non-negative number is a malformed report, not an unknown
+    count -- the schema declares `totals.tests` with `minimum: 0` -- so
+    that raises `ReportError` (exit 2) instead of silently degrading to
+    "unknown" or crashing `int()` on a NaN/Infinity value.
+    """
     totals = report.get("totals")
-    if not isinstance(totals, dict):
+    if not isinstance(totals, dict) or "tests" not in totals:
         return None
-    count = totals.get("tests")
-    return int(count) if _is_number(count) else None
+    count = totals["tests"]
+    if not _is_number(count) or count < 0:
+        raise ReportError(f"{path}: totals.tests is not a usable count ({count!r})")
+    return int(count)
+
+
+def _unmeasured_count(report: dict[str, Any], path: Path) -> int | None:
+    """The report's `totals.unmeasured` (schema_version 3+), or None when
+    the field is absent, including when the report predates the concept
+    entirely.
+
+    Raises `ReportError` when the field is present but not a usable count,
+    for the same reason as `_tests_count`.
+    """
+    totals = report.get("totals")
+    if not isinstance(totals, dict) or "unmeasured" not in totals:
+        return None
+    count = totals["unmeasured"]
+    if not _is_number(count) or count < 0:
+        raise ReportError(
+            f"{path}: totals.unmeasured is not a usable count ({count!r})"
+        )
+    return int(count)
 
 
 def _summary_line(report: dict[str, Any], blocked: bool) -> str:
@@ -205,6 +248,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "instead of the default exit 2"
         ),
     )
+    report.add_argument(
+        "--require-measured",
+        action="store_true",
+        dest="require_measured",
+        help=(
+            "exit 2 if any test's event loop clock could not be trusted "
+            "(totals.unmeasured > 0, schema_version 3+); the default exit "
+            "code is unaffected by an unmeasured test either way"
+        ),
+    )
     return parser
 
 
@@ -221,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = _load_report(path)
         blocked = _is_blocked(report, path)
+        unmeasured = _unmeasured_count(report, path)
+        tests_count = _tests_count(report, path)
     except ReportError as exc:
         print(f"loopguard: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -229,15 +284,30 @@ def main(argv: list[str] | None = None) -> int:
         print(_summary_line(report, blocked))
         for line in _flagged_lines(report):
             print(line)
+        if unmeasured:
+            print(
+                f"loopguard: {unmeasured} test(s) unmeasured -- event loop "
+                "clock untrustworthy, blocking may be undercounted"
+            )
 
     if blocked:
         return EXIT_BLOCKED
+
+    # Opt-in: an unmeasured test does not change the default exit code (see
+    # above) but a caller that wants a hard guarantee can ask for one.
+    if args.require_measured and unmeasured:
+        print(
+            f"loopguard: {unmeasured} test(s) had an untrustworthy event "
+            "loop clock and were not measured (--require-measured)",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
 
     # A clean verdict from a run that instrumented zero tests is not
     # evidence the suite is clean — it is a setup failure (misconfigured
     # asyncio_mode, a rename that dropped every async test, pytest-asyncio
     # missing). Fail closed by default; --allow-empty opts back in.
-    if _tests_count(report) == 0 and not args.allow_empty:
+    if tests_count == 0 and not args.allow_empty:
         print(_EMPTY_RUN_WARNING, file=sys.stderr)
         return EXIT_ERROR
 
