@@ -196,6 +196,19 @@ loopguard_all_async = true
 loopguard_report = loopguard.json
 ```
 
+When a test's own setup is the slow part — building a fresh app in the test body costs 80–120ms of Pydantic validators and OpenAPI schema, which your service pays once at startup — scope it out instead of raising the threshold for everything the test does:
+
+```python
+from fastapi_loopguard.pytest_plugin import loopguard_pause
+
+async def test_route(client):
+    with loopguard_pause():
+        app = create_app()          # construction, not a handler stall
+    resp = await client.get("/x")   # this is what gets measured
+```
+
+`loopguard_only()` is the inverse, for a test whose teardown is slow too. Both are synchronous, and both are no-ops in a test the plugin isn't instrumenting, so a shared helper can use them either way.
+
 The plugin ships inside the package and auto-registers through pytest's `pytest11` entry point — nothing to add to `conftest.py` — and stays inert until you opt in with `loopguard_all_async` or a per-test `@pytest.mark.no_blocking`; [docs/AI-HARNESS.md](https://github.com/parhamdavari/fastapi-loopguard/blob/main/docs/AI-HARNESS.md) has the full option list, the report schema, the per-test `threshold_ms` override, the `allow_blocking` opt-out, a drop-in snippet for your project's agent instructions, and how a test whose event loop clock can't be trusted is reported `unmeasured` rather than a silently wrong `clean`.
 
 ## Known limitations
