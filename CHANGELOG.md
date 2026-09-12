@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `@pytest.mark.no_blocking(threshold_ms=N)` — a per-test blocking threshold
+  that overrides the session-wide `loopguard_threshold_ms` ini value, in
+  either direction. A bad value (non-numeric, negative, NaN, inf, a bool, a
+  positional argument, or an unknown keyword) fails that one test loudly
+  instead of silently falling back to the ini default. `allow_blocking` does
+  not take the keyword — passing one now emits a warning. The JSON report's
+  `testRecord` gains a `threshold_ms` field, always emitted, so a clean test
+  under an override still shows evidence a different bar was used.
+
 ## 0.7.0 (2026-09-11)
 
 Three security fixes, a detection miss that made the most common shape of
