@@ -855,3 +855,404 @@ class TestDetectorArmedBeforeTestBody:
         result = pytester.runpytest("-v")
         result.assert_outcomes(failed=1)
         assert "Event loop blocking detected" in result.stdout.str()
+
+
+class TestPerTestThreshold:
+    """Tests for issue #84: @pytest.mark.no_blocking(threshold_ms=N).
+
+    None of this is implemented yet. `item.get_closest_marker(...)` results
+    are only ever tested for `is not None` in pytest_plugin.py (lines 210,
+    212) -- marker args and kwargs are never read. Every test below either
+    demonstrates that gap (and must fail against the unfixed source) or, for
+    the two marked explicitly, documents behavior that is already correct
+    today.
+    """
+
+    def test_marker_raises_the_bar_above_the_ini_value(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """A 500ms override should let a 200ms block pass under a 10ms ini.
+
+        Today the marker's kwargs are never read, so the ini threshold (10ms)
+        still governs and the block is flagged instead.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking(threshold_ms=500)
+            async def test_bounded_worst_case():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1)
+
+    def test_marker_lowers_the_bar_below_the_ini_value(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """A 10ms override should flag a 200ms block even under a 500ms ini.
+
+        Today the marker's kwargs are never read, so the ini threshold
+        (500ms) still governs and the block passes uncaught.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking(threshold_ms=10)
+            async def test_tight_override():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 500
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+
+    def test_override_raises_the_bar_under_loopguard_all_async(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The override must also apply when the test is instrumented via
+        loopguard_all_async rather than a bare marker.
+
+        Today the marker's kwargs are never read, so the ini threshold
+        (10ms) still governs and the block is flagged instead of passing.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking(threshold_ms=500)
+            async def test_bounded_worst_case():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+            loopguard_all_async = true
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1)
+
+    def test_failure_message_reports_the_effective_threshold(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The failure text must name 500 (the override), not 10 (the ini).
+
+        The block (700ms) exceeds both thresholds, so the test fails either
+        way; only the number printed in the message distinguishes the two
+        code paths. Today it prints the ini value.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking(threshold_ms=500)
+            async def test_still_too_slow():
+                await asyncio.sleep(0.02)
+                time.sleep(0.7)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+        out = result.stdout.str()
+        assert "threshold: 500" in out
+        assert "threshold: 10.0ms" not in out
+
+    def test_zero_is_a_legal_override_not_a_bad_value(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """threshold_ms=0 is documented as legal (the schema allows it) and
+        must not be treated as falsy and silently discarded in favor of the
+        ini value.
+
+        Today the marker's kwargs are never read at all, so the generous
+        500ms ini threshold governs and the 50ms block passes.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking(threshold_ms=0)
+            async def test_tiniest_block_flags():
+                await asyncio.sleep(0.02)
+                time.sleep(0.05)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 500
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+
+    @pytest.mark.parametrize(
+        "literal",
+        ["'fast'", "-1", "float('nan')", "float('inf')", "True"],
+        ids=["non-numeric", "negative", "nan", "inf", "bool"],
+    )
+    def test_bad_marker_value_must_fail_loudly_not_fall_back_to_ini(
+        self, pytester: pytest.Pytester, literal: str
+    ) -> None:
+        """A bad threshold_ms must fail that test, never silently use the ini
+        value instead.
+
+        Today the marker's kwargs are never read, so a bad value is
+        indistinguishable from no override: this clean test passes at the
+        generous 500ms ini threshold when it should fail loudly regardless
+        of whether the test body blocks.
+        """
+        pytester.makepyfile(f"""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking(threshold_ms={literal})
+            async def test_clean_under_bad_marker():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 500
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+
+    def test_positional_argument_is_rejected(self, pytester: pytest.Pytester) -> None:
+        """`no_blocking(500)` (positional) must be rejected like any other
+        bad value, not silently accepted or ignored.
+
+        Today it is ignored: the clean test passes at the ini threshold.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking(500)
+            async def test_clean_under_positional_arg():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 500
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+
+    def test_unknown_keyword_is_rejected(self, pytester: pytest.Pytester) -> None:
+        """`no_blocking(threshold=500)` (typo'd keyword) must be rejected,
+        not silently ignored in favor of the ini value.
+
+        Today it is ignored: the clean test passes at the ini threshold.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking(threshold=500)
+            async def test_clean_under_unknown_kwarg():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 500
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+
+    def test_allow_blocking_with_threshold_ms_warns(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """`allow_blocking(threshold_ms=500)` means "not instrumented at
+        all", so a keyword on it must warn the author to use
+        `no_blocking(threshold_ms=...)` instead of believing they got a gate.
+
+        Today no such warning exists.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.allow_blocking(threshold_ms=500)
+            async def test_opted_out():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+            loopguard_all_async = true
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=1)
+        assert "no_blocking(threshold_ms=" in result.stdout.str()
+
+    def test_bad_value_fails_only_that_test_not_the_whole_session(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """Validation must run per-test, before detector.start(), so one bad
+        marker value fails only its own test and a healthy test alongside it
+        still runs and passes.
+
+        Today the bad value is silently ignored on both tests, so both pass;
+        the desired outcome is exactly one failure and one pass.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking(threshold_ms="fast")
+            async def test_bad_marker():
+                await asyncio.sleep(0.01)
+
+            @pytest.mark.no_blocking
+            async def test_healthy():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 500
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1, passed=1)
+
+    def test_no_blocking_wins_over_allow_blocking_when_both_present(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """Characterization test, not a gap: already true today and cannot
+        be made to fail against the unfixed source.
+
+        `pytest_runtest_call` treats a test as explicit whenever
+        `no_blocking` is present, regardless of `allow_blocking` also being
+        present, so a test carrying both markers is still instrumented.
+        Issue #84 asks for this precedence to be written down, not changed.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking
+            @pytest.mark.allow_blocking
+            async def test_both_markers():
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+        assert "Event loop blocking detected" in result.stdout.str()
+
+    def test_report_records_the_effective_threshold_per_test_and_per_event(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """A blocked test's report record must carry the 500ms override at
+        both the per-test and per-event level; the top-level threshold_ms
+        must stay the 10ms session default.
+
+        Today testRecord carries no `threshold_ms` key at all, so
+        `record["threshold_ms"]` raises KeyError.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+            import time
+
+            @pytest.mark.no_blocking(threshold_ms=500)
+            async def test_bounded_worst_case():
+                await asyncio.sleep(0.02)
+                time.sleep(0.7)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v", "--loopguard-report=loopguard.json")
+        result.assert_outcomes(failed=1)
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        assert report["threshold_ms"] == 10.0
+
+        record = report["tests"][0]
+        assert record["threshold_ms"] == 500
+        assert record["events"][0]["threshold_ms"] == 500
+
+    def test_report_shows_the_override_on_a_clean_test_via_per_test_threshold(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """A clean test's `events` list is empty by definition, so
+        `threshold_ms` on the testRecord is the only place evidence of a
+        moved bar can live.
+
+        Today testRecord carries no `threshold_ms` key at all, so
+        `record["threshold_ms"]` raises KeyError.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking(threshold_ms=500)
+            async def test_clean_under_override():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 10
+        """)
+
+        result = pytester.runpytest("-v", "--loopguard-report=loopguard.json")
+        result.assert_outcomes(passed=1)
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        record = report["tests"][0]
+        assert record["verdict"] == "clean"
+        assert record["events"] == []
+        assert record["threshold_ms"] == 500
