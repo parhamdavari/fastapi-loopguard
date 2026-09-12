@@ -30,6 +30,7 @@ import inspect
 import json
 import logging
 import math
+import time
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -39,14 +40,33 @@ from .hints import hint_lines
 
 logger = logging.getLogger("fastapi_loopguard")
 
-# How long stop() waits for the monitor to record its pending sample. The
-# monitor's own interval is 5ms, so this is slack, not a budget.
-_DRAIN_TIMEOUT_SEC = 0.1
+# asyncio.BaseEventLoop.time() is `return time.monotonic()`, resolved on the
+# `time` module at call time (#83): a test that does
+# `monkeypatch.setattr(time, "monotonic", ...)` freezes every asyncio timer
+# for as long as the patch holds, including a `wait_for` deadline. Every
+# measurement BlockingDetector makes uses this pinned reference instead of
+# `loop.time()`, so it keeps working (and stop() keeps returning promptly)
+# no matter what a test under it does to the `time` module.
+_REAL_MONOTONIC = time.monotonic
+
+# The monitor's own sampling interval.
+_MONITOR_INTERVAL_SEC = 0.005
+
+# How much a tick's real-clock elapsed time may exceed one monitor interval,
+# on a tick that did not itself cross threshold_ms, before the clock that
+# produced it is no longer trusted. One interval, per #83.
+_CLOCK_DRIFT_TOLERANCE_SEC = _MONITOR_INTERVAL_SEC
+
+_CLOCK_UNTRUSTED_REASON = (
+    "the event loop clock could not be trusted during this test (it may "
+    "have been replaced, frozen, or unable to advance for a time) -- any "
+    "blocking may have gone unmeasured"
+)
 
 # Version of the JSON report contract. Bump on any shape change; the
 # schema that describes it is docs/loopguard-report.schema.json. Changes
 # must stay additive — consumers reading older keys keep working.
-REPORT_SCHEMA_VERSION = 2
+REPORT_SCHEMA_VERSION = 3
 
 # Marker for tests that should fail on blocking
 MARKER_NAME = "no_blocking"
@@ -111,13 +131,40 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 class BlockingDetector:
-    """Detects event loop blocking during test execution."""
+    """Detects event loop blocking during test execution.
+
+    Every measurement uses `_REAL_MONOTONIC`, never `loop.time()`: the
+    suite under test can replace `time.monotonic`, which is also what
+    `loop.time()` resolves to, so a detector built on that clock cannot be
+    trusted to notice the replacement (#83). When the clock cannot be
+    trusted, `clock_untrusted` is set and the test is reported `unmeasured`
+    rather than `clean` -- positive evidence of blocking still wins, since
+    that stands on its own regardless of the clock.
+    """
 
     def __init__(self, threshold_ms: float = 50.0) -> None:
         self.threshold_ms = threshold_ms
         self.blocking_events: list[float] = []
         self._running = False
         self._task: asyncio.Task[None] | None = None
+        # Set at the top of every tick in _monitor(); None until the loop
+        # runs or after a tick has been measured, which is what makes
+        # poll() a no-op outside an in-flight tick.
+        self._tick_real_start: float | None = None
+        self._tick_loop_start: float | None = None
+        self._tick_consumed = False
+        self._clock_untrusted = False
+
+    @property
+    def clock_untrusted(self) -> bool:
+        """Whether this test's event loop clock could not be trusted.
+
+        True once a measurement observed `time.monotonic` replaced, the
+        loop's own clock diverging from the real one by more than one
+        monitor interval, or a tick's unaccounted real-clock lag exceeding
+        one interval without itself crossing `threshold_ms`.
+        """
+        return self._clock_untrusted
 
     async def start(self) -> None:
         """Start the blocking detector.
@@ -127,9 +174,70 @@ class BlockingDetector:
         real await (an ASGI request dispatch does exactly that) blocks an
         unarmed sentinel and is never measured.
         """
+        if self._running:
+            return
         self._running = True
+        # Cheap fast path: the clock was already replaced before this
+        # test's own monitoring even began. Tampering that starts or ends
+        # mid-test is caught in poll()/stop() instead -- this check cannot
+        # see anything that happens after it runs.
+        if time.monotonic is not _REAL_MONOTONIC:
+            self._clock_untrusted = True
         self._task = asyncio.create_task(self._monitor())
         await asyncio.sleep(0)
+
+    def poll(self) -> None:
+        """Measure the current tick now instead of waiting for it to finish.
+
+        Mirrors SentinelMonitor.poll() in monitor.py (invariant 9): a test
+        that blocks and returns without ever awaiting again would otherwise
+        leave the monitor's pending sleep expired and unrecorded. Measured
+        with the pinned real clock, so it keeps working when a test has
+        replaced time.monotonic (#83).
+        """
+        if not self._running or self._tick_real_start is None or self._tick_consumed:
+            return
+        # A cancelled or finished monitor leaves _tick_real_start pointing
+        # at a tick that will never complete; measuring against it invents
+        # a stall that grows with wall-clock time.
+        if self._task is None or self._task.done():
+            self._tick_real_start = None
+            return
+        self._measure_tick()
+
+    def _measure_tick(self) -> None:
+        """Measure the in-flight tick and record it exactly once.
+
+        Blocking (lag over threshold) wins outright, since it is positive
+        evidence that stands on its own. Short of that, an untrustworthy
+        clock -- still replaced, diverged from the real one, or a tick with
+        more unaccounted real-clock lag than one monitor interval -- marks
+        the test `unmeasured` rather than `clean`: the sentinel cannot prove
+        nothing blocked when it cannot prove it was watching reliably.
+        """
+        assert self._tick_real_start is not None
+        self._tick_consumed = True
+
+        interval = _MONITOR_INTERVAL_SEC
+        real_elapsed = _REAL_MONOTONIC() - self._tick_real_start
+        lag_ms = (real_elapsed - interval) * 1000
+
+        if lag_ms > self.threshold_ms:
+            self.blocking_events.append(lag_ms)
+            return
+
+        if time.monotonic is not _REAL_MONOTONIC:
+            self._clock_untrusted = True
+            return
+
+        if self._tick_loop_start is not None:
+            loop_elapsed = asyncio.get_running_loop().time() - self._tick_loop_start
+            if abs(real_elapsed - loop_elapsed) > _CLOCK_DRIFT_TOLERANCE_SEC:
+                self._clock_untrusted = True
+                return
+
+        if lag_ms > _CLOCK_DRIFT_TOLERANCE_SEC * 1000:
+            self._clock_untrusted = True
 
     async def stop(self) -> None:
         """Stop the blocking detector.
@@ -137,25 +245,34 @@ class BlockingDetector:
         Runs inside test finally blocks, so it must not swallow a
         cancellation aimed at the test itself (e.g. a timeout plugin).
 
-        Adds up to one monitor interval (5ms) per instrumented test, which
-        is visible as wall clock on a large suite under loopguard_all_async.
-
-        Drains the monitor instead of cancelling it: a test that blocks and
-        then returns without awaiting leaves the monitor holding an expired
-        sleep and an unrecorded lag. Cancelling straight away discards that
-        sample and scores the test clean, which is the common shape of
-        blocking test code. Clearing _running first makes the monitor exit
-        after one more iteration, so this waits at most one interval.
+        Measures the in-flight tick, then cancels the monitor task instead
+        of draining it (#83): the drain's own `asyncio.wait_for` deadline is
+        scheduled on the same loop clock a tampered test can freeze, so it
+        can wait forever behind a timeout that can never fire either.
+        Cancelling a task suspended in `asyncio.sleep` resolves through
+        `call_soon`, not the timer heap, so it completes even when
+        `time.monotonic` is frozen.
         """
+        if not self._running:
+            return
+
+        # A call_soon hop, never a timer -- safe to await even when every
+        # asyncio timer is frozen (#83).
+        await asyncio.sleep(0)
+
+        # Measure the in-flight tick before flipping _running: poll() (like
+        # SentinelMonitor.poll()) refuses to measure once the monitor is no
+        # longer running, since a stopped monitor's tick marker belongs to a
+        # tick that will never complete.
+        self.poll()
         self._running = False
+
         task = self._task
         self._task = None
-        if task:
+        if task is not None and not task.done():
+            task.cancel()
             try:
-                # Bounded: _running is already False, so the monitor exits
-                # after at most one interval. The timeout is only there so a
-                # wedged loop cannot hang every test's teardown.
-                await asyncio.wait_for(task, timeout=_DRAIN_TIMEOUT_SEC)
+                await task
             except asyncio.CancelledError:
                 current = asyncio.current_task()
                 if current is not None and current.cancelling():
@@ -165,23 +282,20 @@ class BlockingDetector:
                 # exception from the monitor must not replace the test's own
                 # failure with a confusing one.
                 logger.warning("LoopGuard blocking detector failed", exc_info=True)
-            finally:
-                if not task.done():
-                    task.cancel()
 
     async def _monitor(self) -> None:
         """Monitor for blocking."""
         loop = asyncio.get_running_loop()
-        interval = 0.005  # 5ms
+        interval = _MONITOR_INTERVAL_SEC
 
         while self._running:
-            start = loop.time()
+            self._tick_real_start = _REAL_MONOTONIC()
+            self._tick_loop_start = loop.time()
+            self._tick_consumed = False
             await asyncio.sleep(interval)
-            elapsed = loop.time() - start
-            lag_ms = (elapsed - interval) * 1000
-
-            if lag_ms > self.threshold_ms:
-                self.blocking_events.append(lag_ms)
+            if not self._tick_consumed:
+                self._measure_tick()
+        self._tick_real_start = None
 
 
 def _threshold_ms(config: pytest.Config) -> float:
@@ -325,7 +439,27 @@ def pytest_runtest_call(item: pytest.Item) -> None:
         # still show.
         __tracebackhide__ = True
         marker = item.get_closest_marker(MARKER_NAME)
-        threshold = _effective_threshold_ms(item, marker)
+        try:
+            threshold = _effective_threshold_ms(item, marker)
+        except pytest.fail.Exception as exc:
+            # #83 (comment): pytest.fail() above raises before the
+            # try/finally below ever runs, so this test used to vanish from
+            # the report entirely -- totals.tests undercounted and the
+            # top-level verdict could read "clean" while a test loudly
+            # failed. Give it an unmeasured record naming the problem
+            # instead, and still fail exactly as before.
+            records = item.config.stash.setdefault(_REPORT_KEY, [])
+            records.append(
+                {
+                    "nodeid": item.nodeid,
+                    "verdict": "unmeasured",
+                    "threshold_ms": _threshold_ms(item.config),
+                    "events": [],
+                    "hints": [],
+                    "reason": str(exc),
+                }
+            )
+            raise
 
         detector = BlockingDetector(threshold_ms=threshold)
         await detector.start()
@@ -337,19 +471,26 @@ def pytest_runtest_call(item: pytest.Item) -> None:
             # functionally still lands its "blocked" verdict in the report
             await detector.stop()
             events = list(detector.blocking_events)
+            if events:
+                verdict = "blocked"
+            elif detector.clock_untrusted:
+                verdict = "unmeasured"
+            else:
+                verdict = "clean"
+            record: dict[str, Any] = {
+                "nodeid": item.nodeid,
+                "verdict": verdict,
+                "threshold_ms": threshold,
+                "events": [
+                    {"lag_ms": round(lag, 2), "threshold_ms": threshold}
+                    for lag in events
+                ],
+                "hints": hint_lines() if events else [],
+            }
+            if verdict == "unmeasured":
+                record["reason"] = _CLOCK_UNTRUSTED_REASON
             records = item.config.stash.setdefault(_REPORT_KEY, [])
-            records.append(
-                {
-                    "nodeid": item.nodeid,
-                    "verdict": "blocked" if events else "clean",
-                    "threshold_ms": threshold,
-                    "events": [
-                        {"lag_ms": round(lag, 2), "threshold_ms": threshold}
-                        for lag in events
-                    ],
-                    "hints": hint_lines() if events else [],
-                }
-            )
+            records.append(record)
 
         if events:
             max_lag = max(events)
@@ -358,6 +499,12 @@ def pytest_runtest_call(item: pytest.Item) -> None:
                 f"{len(events)} blocking event(s), "
                 f"max lag: {max_lag:.2f}ms (threshold: {threshold}ms)"
             )
+        elif detector.clock_untrusted:
+            # Loud, but never a new failure (#83): the plugin cannot prove
+            # the test is clean when it cannot prove it was watching the
+            # loop reliably, but it must not punish the test for that with
+            # a failure it would not otherwise have had.
+            item.warn(pytest.PytestWarning(_CLOCK_UNTRUSTED_REASON))
 
         return result
 
@@ -373,19 +520,40 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
     records = config.stash.get(_REPORT_KEY, [])
     flagged = sum(1 for r in records if r["verdict"] == "blocked")
+    unmeasured = sum(1 for r in records if r["verdict"] == "unmeasured")
+    totals: dict[str, int] = {
+        "tests": len(records),
+        "flagged": flagged,
+    }
+    if unmeasured:
+        totals["unmeasured"] = unmeasured
+        totals["measured"] = len(records) - unmeasured
     report = {
         "schema_version": REPORT_SCHEMA_VERSION,
         # One top-level verdict so a consumer does not have to derive it.
         # A run that instrumented nothing is "clean": the report states what
         # was observed, and nothing blocked because nothing was watched. A
         # gate that must also insist the suite was actually checked reads
-        # totals.tests > 0 alongside it.
+        # totals.tests > 0 alongside it. An unmeasured-only run is also
+        # "clean": no blocking was observed, even though it could not be
+        # ruled out either -- see totals.unmeasured for that distinction.
         "status": "blocked" if flagged else "clean",
         "threshold_ms": _threshold_ms(config),
-        "totals": {
-            "tests": len(records),
-            "flagged": flagged,
-        },
+        "totals": totals,
         "tests": records,
     }
     Path(path).write_text(json.dumps(report, indent=2))
+
+
+def pytest_terminal_summary(
+    terminalreporter: Any, exitstatus: int, config: pytest.Config
+) -> None:
+    """Name how many tests had an untrustworthy clock, if any did (#83)."""
+    records = config.stash.get(_REPORT_KEY, [])
+    unmeasured = sum(1 for r in records if r["verdict"] == "unmeasured")
+    if not unmeasured:
+        return
+    terminalreporter.write_line(
+        f"loopguard: {unmeasured} unmeasured test(s) -- the event loop "
+        "clock could not be trusted, so blocking may have gone undetected"
+    )

@@ -265,8 +265,11 @@ class TestPytestPluginIntegration:
         """A test that blocks and returns with no trailing await still fails.
 
         This is the common shape of blocking test code. The monitor's pending
-        sleep expires during the block but never resumes, so a stop() that
-        cancels instead of draining discards the sample and scores it clean.
+        sleep expires during the block but never resumes on its own, so
+        stop() measures the in-flight tick itself (poll(), mirroring
+        SentinelMonitor.poll()) before cancelling the task -- a stop() that
+        cancelled first, with no measurement, would discard the sample and
+        score this test clean.
         """
         pytester.makepyfile("""
             import pytest
@@ -1547,6 +1550,43 @@ class TestPerTestThreshold:
             "value was rejected -- validation must happen before "
             "detector.start() so no monitor task is ever created for it"
         )
+
+    def test_bad_marker_value_still_produces_an_unmeasured_report_record(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """#83 (comment): a test that fails marker validation must not
+        vanish from the report.
+
+        pytest.fail() in _effective_threshold_ms raises before the test's
+        own try/finally ever appends a record, so before this fix the test
+        disappeared from loopguard.json entirely: totals.tests undercounted
+        and the top-level verdict could read "clean" while a test loudly
+        failed. It must now get an unmeasured record naming the marker
+        problem, and still fail in pytest exactly as before.
+        """
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking(threshold_ms="oops")
+            async def test_bad_marker():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest("-v", "--loopguard-report=loopguard.json")
+        result.assert_outcomes(failed=1)
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        assert report["totals"]["tests"] == 1
+        assert report["totals"]["unmeasured"] == 1
+        assert report["totals"]["measured"] == 0
+        [record] = report["tests"]
+        assert record["verdict"] == "unmeasured"
+        assert "threshold_ms" in record["reason"]
 
     def test_no_blocking_wins_over_allow_blocking_when_both_present(
         self, pytester: pytest.Pytester
