@@ -373,6 +373,14 @@ class TestLoopguardPause:
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, failed=1)
+        # Which one passed and which one failed is the whole claim; the
+        # counts alone hold just as well if the two swapped places.
+        result.stdout.fnmatch_lines(
+            [
+                "*::test_setup_is_scoped_out PASSED*",
+                "*::test_unscoped_still_flags FAILED*",
+            ]
+        )
 
 
 class TestLoopguardOnly:
@@ -533,6 +541,12 @@ class TestLoopguardOnly:
         assert _max_lag_ms(_report(pytester)) > 100.0
 
     def test_only_under_loopguard_all_async(self, pytester: pytest.Pytester) -> None:
+        """The `only` mirror of the pause manager's all-async case.
+
+        The identities are pinned, not just the counts: `passed=1,
+        failed=1` is equally true of a run where the window suppressed the
+        wrong test.
+        """
         pytester.makepyfile("""
             import asyncio
             import time
@@ -553,6 +567,12 @@ class TestLoopguardOnly:
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, failed=1)
+        result.stdout.fnmatch_lines(
+            [
+                "*::test_setup_out_of_scope PASSED*",
+                "*::test_unscoped_still_flags FAILED*",
+            ]
+        )
 
 
 class TestScopedMeasurementNoOps:
