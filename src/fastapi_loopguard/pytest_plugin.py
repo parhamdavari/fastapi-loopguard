@@ -29,8 +29,9 @@ import asyncio
 import inspect
 import json
 import logging
+import math
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 
@@ -188,6 +189,74 @@ def _threshold_ms(config: pytest.Config) -> float:
     return float(threshold_str) if threshold_str else 50.0
 
 
+def _fail_bad_threshold(value: object) -> NoReturn:
+    pytest.fail(
+        f"@pytest.mark.{MARKER_NAME}(threshold_ms=...) must be a "
+        f"non-negative, finite number; got {value!r}",
+        pytrace=False,
+    )
+
+
+def _validate_threshold_ms(value: object) -> float:
+    """Parse and validate a threshold_ms override, failing the test on
+    anything else.
+
+    bool is checked before the numeric check because isinstance(True, int)
+    is True in Python. Numeric strings go through float(), matching how
+    the ini value is parsed.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        _fail_bad_threshold(value)
+
+    try:
+        parsed = float(value)
+    except ValueError:
+        _fail_bad_threshold(value)
+
+    if math.isnan(parsed) or math.isinf(parsed) or parsed < 0:
+        _fail_bad_threshold(value)
+
+    return parsed
+
+
+def _effective_threshold_ms(item: pytest.Function, marker: pytest.Mark | None) -> float:
+    """The threshold to use for this test.
+
+    A bare `@pytest.mark.no_blocking` (marker with no threshold_ms kwarg)
+    keeps the session default (the ini value). A `threshold_ms=...` kwarg
+    overrides it, in either direction. Anything else on the marker -- a
+    positional argument, an unknown keyword, or a bad threshold_ms value --
+    fails this one test via pytest.fail(pytrace=False) rather than silently
+    falling back to the ini default, which would hide a typo behind a
+    threshold the test's author does not believe is in effect.
+    """
+    default = _threshold_ms(item.config)
+    if marker is None:
+        return default
+
+    if marker.args:
+        pytest.fail(
+            f"@pytest.mark.{MARKER_NAME}(...) does not take positional "
+            f"arguments; got {marker.args!r}. Use threshold_ms=<value> "
+            f"instead.",
+            pytrace=False,
+        )
+
+    unknown = set(marker.kwargs) - {"threshold_ms"}
+    if unknown:
+        pytest.fail(
+            f"@pytest.mark.{MARKER_NAME}(...) received unknown keyword "
+            f"argument(s) {sorted(unknown)!r}; only threshold_ms is "
+            f"supported.",
+            pytrace=False,
+        )
+
+    if "threshold_ms" not in marker.kwargs:
+        return default
+
+    return _validate_threshold_ms(marker.kwargs["threshold_ms"])
+
+
 def _all_async_enabled(config: pytest.Config) -> bool:
     return bool(
         config.getoption("loopguard_all_async") or config.getini("loopguard_all_async")
@@ -208,8 +277,23 @@ def pytest_runtest_call(item: pytest.Item) -> None:
         return
 
     explicit = item.get_closest_marker(MARKER_NAME) is not None
+    allow_marker = item.get_closest_marker(ALLOW_MARKER_NAME)
+    if allow_marker is not None and (allow_marker.args or allow_marker.kwargs):
+        # allow_blocking means "not instrumented at all" -- there is no
+        # measurement for an argument on it to set a bar for. Emitted
+        # before the early return below, so it fires even when that
+        # return is the only thing that happens to this test.
+        item.warn(
+            pytest.PytestWarning(
+                f"@pytest.mark.{ALLOW_MARKER_NAME} takes no arguments; it "
+                f"exempts a test from instrumentation entirely, so there is "
+                f"no measurement to set a threshold for. Use "
+                f"@pytest.mark.{MARKER_NAME}(threshold_ms=...) to raise the "
+                f"bar instead of removing the check."
+            )
+        )
     if not explicit:
-        if item.get_closest_marker(ALLOW_MARKER_NAME) is not None:
+        if allow_marker is not None:
             return
         if not _all_async_enabled(item.config):
             return
@@ -240,7 +324,8 @@ def pytest_runtest_call(item: pytest.Item) -> None:
         # is unaffected: only this frame is hidden, the user's own frames
         # still show.
         __tracebackhide__ = True
-        threshold = _threshold_ms(item.config)
+        marker = item.get_closest_marker(MARKER_NAME)
+        threshold = _effective_threshold_ms(item, marker)
 
         detector = BlockingDetector(threshold_ms=threshold)
         await detector.start()
@@ -257,6 +342,7 @@ def pytest_runtest_call(item: pytest.Item) -> None:
                 {
                     "nodeid": item.nodeid,
                     "verdict": "blocked" if events else "clean",
+                    "threshold_ms": threshold,
                     "events": [
                         {"lag_ms": round(lag, 2), "threshold_ms": threshold}
                         for lag in events
