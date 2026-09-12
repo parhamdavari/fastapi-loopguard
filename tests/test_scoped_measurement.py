@@ -23,17 +23,22 @@ from __future__ import annotations
 
 import ast
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
+import jsonschema
 import pytest
 
 # Enable pytester fixture for plugin integration tests
 pytest_plugins = ["pytester"]
 
 from fastapi_loopguard import pytest_plugin  # noqa: E402
+from fastapi_loopguard.pytest_plugin import REPORT_SCHEMA_VERSION  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+_SCHEMA_PATH = _REPO_ROOT / "docs" / "loopguard-report.schema.json"
 
 # 10ms is the threshold the issue's acceptance criteria name, against a
 # 200ms block inside the window: a 20x gap, so the block cannot be missed.
@@ -52,6 +57,11 @@ _TIGHT_ALL_ASYNC_INI = """
     loopguard_threshold_ms = 10
     loopguard_all_async = true
 """
+
+
+def _schema() -> dict[str, Any]:
+    parsed: dict[str, Any] = json.loads(_SCHEMA_PATH.read_text())
+    return parsed
 
 
 def _report(pytester: pytest.Pytester) -> dict[str, Any]:
@@ -468,3 +478,222 @@ class TestLoopguardOnly:
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, failed=1)
+
+
+class TestScopedMeasurementNoOps:
+    """Uninstrumented tests: both managers must be inert, not merely safe.
+
+    A helper that scopes its own construction runs in every suite that
+    imports it, most of which are not instrumented at all. If the managers
+    needed a detector, they would either raise or warn there, and the
+    helper could not be shared.
+    """
+
+    def test_no_op_in_a_synchronous_test(self, pytester: pytest.Pytester) -> None:
+        """A sync test never runs on the event loop, so there is nothing
+        to pause -- and nothing to complain about either."""
+        pytester.makepyfile("""
+            import time
+
+            from fastapi_loopguard.pytest_plugin import loopguard_only, loopguard_pause
+
+            def test_sync():
+                with loopguard_pause():
+                    time.sleep(0.05)
+                with loopguard_only():
+                    time.sleep(0.05)
+        """)
+        pytester.makeini(_TIGHT_ALL_ASYNC_INI)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=0)
+
+    def test_no_op_in_an_unmarked_async_test(self, pytester: pytest.Pytester) -> None:
+        """No marker and the gate off: the wrapper never runs, so the
+        context variable was never set."""
+        pytester.makepyfile("""
+            import asyncio
+            import time
+
+            from fastapi_loopguard.pytest_plugin import loopguard_only, loopguard_pause
+
+            async def test_unmarked():
+                with loopguard_pause():
+                    time.sleep(0.05)
+                with loopguard_only():
+                    time.sleep(0.05)
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini(_TIGHT_INI)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=0)
+
+    def test_no_op_in_an_allow_blocking_test(self, pytester: pytest.Pytester) -> None:
+        """`allow_blocking` means "not instrumented at all", so the
+        managers have nothing to talk to even under the gate."""
+        pytester.makepyfile("""
+            import asyncio
+            import time
+
+            import pytest
+
+            from fastapi_loopguard.pytest_plugin import loopguard_only, loopguard_pause
+
+            @pytest.mark.allow_blocking
+            async def test_opted_out():
+                with loopguard_pause():
+                    time.sleep(0.05)
+                with loopguard_only():
+                    time.sleep(0.05)
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini(_TIGHT_ALL_ASYNC_INI)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=0)
+
+    def test_same_helper_passes_with_the_gate_on_and_off(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """One suite, two runs, identical outcomes.
+
+        The gate-off run is the one that matters: `passed=1, warnings=0`
+        with nothing instrumenting the test proves the manager costs a
+        shared helper nothing.
+        """
+        pytester.makepyfile("""
+            import asyncio
+            import time
+
+            from fastapi_loopguard.pytest_plugin import loopguard_pause
+
+            async def build_app():
+                # Shared helper: identical code under either gate setting.
+                with loopguard_pause():
+                    time.sleep(0.2)
+                await asyncio.sleep(0.01)
+
+            async def test_uses_the_shared_helper():
+                await build_app()
+        """)
+        pytester.makeini(_TIGHT_INI)
+
+        gate_off = pytester.runpytest("-v")
+        gate_off.assert_outcomes(passed=1, warnings=0)
+
+        gate_on = pytester.runpytest("-v", "--loopguard-all-async")
+        gate_on.assert_outcomes(passed=1, warnings=0)
+
+    def test_no_op_outside_an_instrumented_test(
+        self, recwarn: pytest.WarningsRecorder
+    ) -> None:
+        """Used right here, in this repo's own uninstrumented suite.
+
+        Yields immediately, raises nothing, warns nothing.
+        """
+        from fastapi_loopguard.pytest_plugin import loopguard_only, loopguard_pause
+
+        entered = []
+        with loopguard_pause():
+            entered.append("pause")
+        with loopguard_only():
+            entered.append("only")
+
+        assert entered == ["pause", "only"]
+        assert len(recwarn) == 0
+
+    def test_no_op_outside_pytest_entirely(self) -> None:
+        """A plain script, with no pytest session and no event loop.
+
+        A subprocess is the only honest check: this process is mid-session,
+        so an in-process assertion proves less than it looks like it does.
+        """
+        code = (
+            "import time\n"
+            "from fastapi_loopguard.pytest_plugin import (\n"
+            "    loopguard_only,\n"
+            "    loopguard_pause,\n"
+            ")\n"
+            "with loopguard_pause():\n"
+            "    time.sleep(0.01)\n"
+            "with loopguard_only():\n"
+            "    time.sleep(0.01)\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+
+class TestScopedMeasurementInSpawnedTasks:
+    """A child task inherits a context copy pointing at the same detector."""
+
+    def test_pause_inside_a_task_spawned_by_the_test(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """Scoping from inside a spawned task still works.
+
+        `asyncio.create_task` copies the current context, so the child sees
+        the same detector object. The window state therefore has to live on
+        that object, not in a separate context variable the child would
+        only be mutating its own copy of.
+        """
+        pytester.makepyfile("""
+            import asyncio
+            import time
+
+            import pytest
+
+            from fastapi_loopguard.pytest_plugin import loopguard_pause
+
+            async def build_in_a_task():
+                with loopguard_pause():
+                    time.sleep(0.2)
+                await asyncio.sleep(0.01)
+
+            @pytest.mark.no_blocking
+            async def test_pause_from_a_child_task():
+                await asyncio.create_task(build_in_a_task())
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini(_TIGHT_INI)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=0)
+
+
+class TestScopedMeasurementReport:
+    """The JSON report is unchanged: a paused window produces no events."""
+
+    def test_paused_window_produces_no_events(self, pytester: pytest.Pytester) -> None:
+        pytester.makepyfile("""
+            import asyncio
+            import time
+
+            import pytest
+
+            from fastapi_loopguard.pytest_plugin import loopguard_pause
+
+            @pytest.mark.no_blocking
+            async def test_setup_is_scoped_out():
+                with loopguard_pause():
+                    time.sleep(0.2)
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini(_TIGHT_INI)
+
+        result = pytester.runpytest("--loopguard-report=loopguard.json")
+        result.assert_outcomes(passed=1)
+
+        report = _report(pytester)
+        jsonschema.validate(report, _schema())
+        assert report["schema_version"] == REPORT_SCHEMA_VERSION
+        assert report["status"] == "clean"
+        assert report["totals"] == {"tests": 1, "flagged": 0}
+
+        (record,) = report["tests"]
+        assert record["verdict"] == "clean"
+        assert record["events"] == []
+        assert record["hints"] == []
