@@ -135,11 +135,19 @@ def _summary_line(report: dict[str, Any], blocked: bool) -> str:
 
 
 def _flagged_lines(report: dict[str, Any]) -> list[str]:
-    """One line per flagged test: its node id and its worst measured lag."""
+    """One line per flagged test: its node id and its worst measured lag.
+
+    A test's own threshold_ms is appended only when it differs from the
+    top-level (session default) threshold_ms -- i.e. only when a
+    @pytest.mark.no_blocking(threshold_ms=...) override was in play, since
+    that is the only case the session-level summary line does not already
+    cover.
+    """
     records = report.get("tests")
     if not isinstance(records, list):
         return []
 
+    session_threshold = report.get("threshold_ms")
     lines = []
     for record in records:
         if not isinstance(record, dict) or record.get("verdict") != "blocked":
@@ -151,7 +159,11 @@ def _flagged_lines(report: dict[str, Any]) -> list[str]:
             if isinstance(event, dict) and _is_number(event.get("lag_ms"))
         ]
         worst = f"{max(lags)}ms" if lags else "unknown"
-        lines.append(f"  blocked {record.get('nodeid', 'unknown')}  worst_lag={worst}")
+        line = f"  blocked {record.get('nodeid', 'unknown')}  worst_lag={worst}"
+        test_threshold = record.get("threshold_ms")
+        if _is_number(test_threshold) and test_threshold != session_threshold:
+            line += f"  threshold={test_threshold}ms"
+        lines.append(line)
     return lines
 
 

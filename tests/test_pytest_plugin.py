@@ -1023,12 +1023,18 @@ class TestPerTestThreshold:
         result.assert_outcomes(failed=1)
 
     @pytest.mark.parametrize(
-        "literal",
-        ["'fast'", "-1", "float('nan')", "float('inf')", "True"],
+        ("literal", "expected_repr"),
+        [
+            ("'fast'", repr("fast")),
+            ("-1", repr(-1)),
+            ("float('nan')", repr(float("nan"))),
+            ("float('inf')", repr(float("inf"))),
+            ("True", repr(True)),
+        ],
         ids=["non-numeric", "negative", "nan", "inf", "bool"],
     )
     def test_bad_marker_value_must_fail_loudly_not_fall_back_to_ini(
-        self, pytester: pytest.Pytester, literal: str
+        self, pytester: pytest.Pytester, literal: str, expected_repr: str
     ) -> None:
         """A bad threshold_ms must fail that test, never silently use the ini
         value instead.
@@ -1037,6 +1043,14 @@ class TestPerTestThreshold:
         indistinguishable from no override: this clean test passes at the
         generous 500ms ini threshold when it should fail loudly regardless
         of whether the test body blocks.
+
+        Asserting failed=1 alone is not enough for the `bool` case: with the
+        isinstance(value, bool) guard removed, float(True) == 1.0, and a
+        1.0ms threshold is thin enough that ordinary scheduler jitter often
+        gets flagged as blocking too -- the outcome alone cannot tell a real
+        rejection from a coincidental blocking detection. Asserting on the
+        rejection message (the marker name and the rejected value's repr)
+        pins the actual validation path for every case here.
         """
         pytester.makepyfile(f"""
             import pytest
@@ -1054,6 +1068,10 @@ class TestPerTestThreshold:
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(failed=1)
+
+        out = result.stdout.str()
+        assert "no_blocking(threshold_ms=" in out
+        assert f"got {expected_repr}" in out
 
     def test_positional_argument_is_rejected(self, pytester: pytest.Pytester) -> None:
         """`no_blocking(500)` (positional) must be rejected like any other
@@ -1158,6 +1176,62 @@ class TestPerTestThreshold:
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(failed=1, passed=1)
+
+    def test_bad_value_never_starts_the_monitor(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Validation must run before `detector.start()`.
+
+        Issue #84 requires validating the marker at the top of `wrapped`,
+        before the detector starts, precisely so a rejected value fails
+        without ever creating a background monitor task. If validation were
+        moved to after `await detector.start()` instead, `pytest.fail`
+        would raise before the `try/finally` that calls `detector.stop()`,
+        leaking that task -- exactly what CLAUDE.md's lifecycle invariant
+        (idempotent, race-free start/stop) exists to prevent.
+
+        `result.assert_outcomes(failed=1)` alone cannot tell these two
+        orderings apart: the test fails either way. This instruments the
+        actual `BlockingDetector.start` the plugin calls (patched on the
+        class object the already-imported `pytest_plugin` module holds, so
+        the patch also covers the in-process pytester run below) and
+        asserts it was never invoked for a test whose marker value was
+        rejected.
+
+        Verified to fail (red) when `wrapped`'s validation call is moved to
+        after `await detector.start()`.
+        """
+        starts: list[None] = []
+        original_start = pytest_plugin.BlockingDetector.start
+
+        async def counting_start(self: pytest_plugin.BlockingDetector) -> None:
+            starts.append(None)
+            await original_start(self)
+
+        monkeypatch.setattr(pytest_plugin.BlockingDetector, "start", counting_start)
+
+        pytester.makepyfile("""
+            import pytest
+            import asyncio
+
+            @pytest.mark.no_blocking(threshold_ms="fast")
+            async def test_bad_marker():
+                await asyncio.sleep(0.01)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 500
+        """)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(failed=1)
+
+        assert starts == [], (
+            "BlockingDetector.start() was called for a test whose marker "
+            "value was rejected -- validation must happen before "
+            "detector.start() so no monitor task is ever created for it"
+        )
 
     def test_no_blocking_wins_over_allow_blocking_when_both_present(
         self, pytester: pytest.Pytester

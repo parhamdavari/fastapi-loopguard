@@ -18,7 +18,7 @@
       "enum": ["blocked", "clean"]
     },
     "threshold_ms": {
-      "description": "Loop lag, in milliseconds, beyond which a test is flagged (loopguard_threshold_ms). Zero is permitted: the plugin does not reject loopguard_threshold_ms = 0, so a report can carry it.",
+      "description": "The session default: loop lag, in milliseconds, beyond which an instrumented test is flagged (loopguard_threshold_ms). Individual tests may override this via @pytest.mark.no_blocking(threshold_ms=...) -- see testRecord.threshold_ms for the value actually applied to a given test. Zero is permitted: the plugin does not reject loopguard_threshold_ms = 0, so a report can carry it.",
       "type": "number",
       "minimum": 0
     },
@@ -78,6 +78,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "threshold_ms": {
+          "description": "The effective threshold, in milliseconds, this test was measured against: the top-level threshold_ms (session default) unless a @pytest.mark.no_blocking(threshold_ms=...) override applies to this test. Always emitted, including for a \"clean\" verdict, since events is empty by definition and would otherwise carry no evidence a different bar was used.",
+          "type": "number",
+          "minimum": 0
         }
       }
     },
@@ -92,7 +97,7 @@
           "type": "number"
         },
         "threshold_ms": {
-          "description": "Threshold this event was measured against, in milliseconds. Zero is permitted, as above.",
+          "description": "Threshold this event was measured against, in milliseconds -- the session default unless a per-test @pytest.mark.no_blocking(threshold_ms=...) override was in effect. Zero is permitted, as above.",
           "type": "number",
           "minimum": 0
         }

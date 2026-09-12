@@ -49,7 +49,7 @@ src/fastapi_loopguard/
   middleware.py     pure-ASGI LoopGuardMiddleware, enforcement modes, HTML/JSON error pages
   logging.py        StructuredFormatter (JSON), configure_logging, log_blocking_event
   metrics.py        optional Prometheus LoopGuardMetrics, wired in when prometheus_enabled
-  pytest_plugin.py  pytest11 entry point, @pytest.mark.no_blocking, BlockingDetector
+  pytest_plugin.py  pytest11 entry point, @pytest.mark.no_blocking (with a per-test threshold_ms override), BlockingDetector
   cli.py            `loopguard` console script — `loopguard report PATH`, exit 0/1/2
 ```
 

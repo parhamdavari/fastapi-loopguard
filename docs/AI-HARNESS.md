@@ -58,10 +58,16 @@ exist as CLI flags: `--loopguard-all-async`, `--loopguard-report=PATH`.
 | `loopguard_all_async` | ini / `--loopguard-all-async` | off | Treat every async test as `@pytest.mark.no_blocking` |
 | `loopguard_report` | ini / `--loopguard-report=PATH` | off | Write the JSON verdict file |
 | `@pytest.mark.no_blocking` | marker | — | Gate one test explicitly (works without all-async mode) |
-| `@pytest.mark.allow_blocking` | marker | — | Exempt one test from all-async mode |
+| `@pytest.mark.no_blocking(threshold_ms=N)` | marker | — | Override `loopguard_threshold_ms` for this test only, in either direction |
+| `@pytest.mark.allow_blocking` | marker | — | Exempt one test from all-async mode; takes no arguments |
 
 Exit semantics are plain pytest: flagged tests fail, so any CI that runs
 pytest is already enforcing the gate.
+
+A test carrying both `no_blocking` and `allow_blocking` is still
+instrumented — `no_blocking` wins. `allow_blocking` means "not
+instrumented at all," so it does not accept `threshold_ms`; passing it
+anyway emits a warning rather than silently doing nothing.
 
 ## The `loopguard` command
 
@@ -135,6 +141,7 @@ subcommand exits 2.
     {
       "nodeid": "tests/test_api.py::test_upload",
       "verdict": "blocked",
+      "threshold_ms": 50.0,
       "events": [{"lag_ms": 180.24, "threshold_ms": 50.0}],
       "hints": [
         "time.sleep(n) -> await asyncio.sleep(n)",
@@ -147,6 +154,7 @@ subcommand exits 2.
     {
       "nodeid": "tests/test_api.py::test_list",
       "verdict": "clean",
+      "threshold_ms": 50.0,
       "events": [],
       "hints": []
     }
@@ -158,6 +166,11 @@ Only instrumented tests appear (`totals.tests` counts them). A `blocked`
 verdict means the loop lagged past the threshold while that test ran; the
 sentinel measures lag, not call stacks, so the culprit is in the code that
 test executed — usually the endpoint it called.
+
+Each test record's own `threshold_ms` is the bar that test was actually
+measured against: the top-level `threshold_ms` unless the test carries
+`@pytest.mark.no_blocking(threshold_ms=...)`, in which case that override
+is what appears here (and on its events) instead.
 
 ### The top-level verdict
 
@@ -296,7 +309,10 @@ When a test fails with "Event loop blocking detected":
    sync calls with the async equivalents listed under `hints`; they use
    only the standard library and `httpx`.
 3. Never widen `loopguard_threshold_ms` or add `allow_blocking` to make
-   a test pass — fix the blocking call instead.
+   a test pass — fix the blocking call instead. A documented, reviewed
+   `@pytest.mark.no_blocking(threshold_ms=...)` on one test for a real,
+   bounded worst case is a deliberate design decision; silencing a test
+   you cannot explain is not.
 ```
 
 ## Scoring models instead of guarding CI
