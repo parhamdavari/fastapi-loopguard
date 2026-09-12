@@ -309,14 +309,26 @@ class BlockingDetector:
 
         real_start = self._tick_real_start
         loop_start = self._tick_loop_start
-        if self._watermark_real is not None and self._watermark_real > real_start:
+        interval = _MONITOR_INTERVAL_SEC
+        watermark = self._watermark_real
+        if watermark is not None and watermark > real_start:
             # A window ended part-way through this tick: measure only what
             # happened after it, and move BOTH clocks' baselines, or the
             # drift check below reads the window itself as divergence.
-            real_start = self._watermark_real
+            #
+            # The expected time moves with the baseline. This tick's sleep
+            # started at the tick, not at the watermark, so all that is
+            # still owed from the watermark onward is whatever of that
+            # sleep is left -- nothing at all once it would already have
+            # ended, which is the usual case after a window that blocked
+            # for longer than one interval. Crediting the full interval
+            # from every watermark drops up to one interval of real lag at
+            # each boundary, which invariant 9 does not allow any more
+            # than it allows counting one twice.
+            interval = max(0.0, real_start + interval - watermark)
+            real_start = watermark
             loop_start = self._watermark_loop
 
-        interval = _MONITOR_INTERVAL_SEC
         real_elapsed = _REAL_MONOTONIC() - real_start
         lag_ms = (real_elapsed - interval) * 1000
 

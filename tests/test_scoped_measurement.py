@@ -747,6 +747,105 @@ class TestScopedMeasurementReport:
         assert record["hints"] == []
 
 
+class _FakeClock:
+    """A monotonic clock a test moves by hand."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class TestWatermarkArithmetic:
+    """What a measurement taken from a watermark credits as expected time.
+
+    Driven straight at `BlockingDetector` with a hand-moved clock rather
+    than through `pytester`, for the same reason `test_cumulative_blocking`
+    drives `SentinelMonitor` directly: the numbers here are exact, and
+    wall-clock timing cannot pin them.
+
+    The tick's `asyncio.sleep` starts at the tick, not at the watermark, so
+    the only expected time left to credit from the watermark onward is
+    whatever of that sleep is still pending -- nothing at all once the
+    sleep would already have ended. Crediting a full monitor interval from
+    every watermark under-reports the first measurement after each window
+    boundary by up to one interval, and a stall just over the threshold
+    that lands in that tick reads as clean. Invariant 9 does not allow a
+    dropped millisecond at a boundary any more than a double-counted one.
+    """
+
+    @staticmethod
+    def _measure(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        tick_start: float,
+        watermark: float | None,
+        measured_at: float,
+    ) -> list[float]:
+        """Run one tick measurement on a hand-moved clock.
+
+        Loop-clock baselines stay None throughout: `_measure_tick`'s drift
+        check is not what is under test here, and there is no running loop
+        in a synchronous test to read one from anyway.
+        """
+        clock = _FakeClock()
+        monkeypatch.setattr(pytest_plugin, "_REAL_MONOTONIC", clock)
+
+        detector = pytest_plugin.BlockingDetector(threshold_ms=1.0)
+        detector._running = True
+        detector._tick_real_start = tick_start
+        detector._tick_loop_start = None
+        detector._tick_consumed = False
+
+        if watermark is not None:
+            clock.now = watermark
+            detector._resume_measurement()
+
+        clock.now = measured_at
+        detector._measure_tick()
+        return detector.blocking_events
+
+    def test_no_watermark_credits_the_whole_interval(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The ordinary case, unchanged: 100ms of tick, 5ms of it expected."""
+        events = self._measure(
+            monkeypatch, tick_start=0.0, watermark=None, measured_at=0.100
+        )
+        assert events == [pytest.approx(95.0)]
+
+    def test_watermark_inside_the_sleep_credits_only_what_is_left_of_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A watermark 2ms into a 5ms sleep leaves 3ms still pending.
+
+        98ms measured from the watermark, 3ms of it expected: 95ms of lag,
+        the same total the unwatermarked tick reports above. The interval
+        is credited exactly once wherever the boundary falls inside it.
+        """
+        events = self._measure(
+            monkeypatch, tick_start=0.0, watermark=0.002, measured_at=0.100
+        )
+        assert events == [pytest.approx(95.0)]
+
+    def test_watermark_past_the_sleep_credits_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The window outlasted the tick's sleep, so no sleep is pending.
+
+        60ms elapsed since the watermark, none of it expected: the loop
+        owed the monitor a resumption from the moment the window closed.
+        Crediting a full interval here would report 55ms, and a genuine
+        56-59ms stall landing in the tick right after a window would come
+        back clean.
+        """
+        events = self._measure(
+            monkeypatch, tick_start=0.0, watermark=0.100, measured_at=0.160
+        )
+        assert events == [pytest.approx(60.0)]
+
+
 # A real FastAPI app, built the way the field report's 55 tests build one:
 # inside the test body, per test. ~110ms of Pydantic validator and OpenAPI
 # schema construction, none of which recurs in the deployed service, which

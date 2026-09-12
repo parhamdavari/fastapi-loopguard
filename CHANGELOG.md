@@ -16,16 +16,19 @@
   the request after it fully gated — a handler that blocks still fails the
   test. `loopguard_only()` is the inverse, measuring its block and nothing
   else in the test. Both edges of a window are neutralised, so blocking
-  before it is still charged and the tick straddling its end contributes only
-  its post-window portion: invariant 9's "no millisecond counted twice, none
-  dropped" applied to a user-defined region. Both nest by depth, are
-  exception-safe, work from a task the test spawned, and are complete no-ops
-  — no warning, no error — in a test the plugin is not instrumenting, so a
-  shared helper can use them whether or not the gate is on. No report schema
-  change: a scoped-out window simply produces no events. `docs/AI-HARNESS.md`
-  now tells agents to reach for `loopguard_pause()` when setup is the slow
-  part, rather than widening `loopguard_threshold_ms` or adding
-  `allow_blocking`.
+  before it is still charged, a stall inside it is banked as the window
+  closes even if nothing ever awaits, and the tick straddling a boundary
+  contributes only its portion on the measured side — credited against
+  whatever of that tick's sleep is still pending from the boundary, not a
+  fresh full interval. That is invariant 9's "no millisecond counted twice,
+  none dropped" applied to a user-defined region, in both directions. Both
+  nest by depth, are exception-safe, work from a task the test spawned, and
+  are complete no-ops — no warning, no error — in a test the plugin is not
+  instrumenting, so a shared helper can use them whether or not the gate is
+  on. No report schema change: a scoped-out window simply produces no
+  events. `docs/AI-HARNESS.md` now tells agents to reach for
+  `loopguard_pause()` when setup is the slow part, rather than widening
+  `loopguard_threshold_ms` or adding `allow_blocking`.
 
 ## 0.8.0 (2026-09-12)
 
