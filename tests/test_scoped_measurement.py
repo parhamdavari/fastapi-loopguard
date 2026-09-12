@@ -43,9 +43,14 @@ _SCHEMA_PATH = _REPO_ROOT / "docs" / "loopguard-report.schema.json"
 
 # 10ms is the threshold the issue's acceptance criteria name, against a
 # 200ms block inside the window: a 20x gap, so the block cannot be missed.
-# Every test using it keeps the *measured* region down to a short await
-# doing nothing, since a tight threshold is only free for tests asserting
-# that blocking IS detected (CLAUDE.md).
+# It is reserved for the tests that assert blocking IS detected, where a
+# threshold that is too tight can only ever cause the assertion to hold --
+# never to fail. CLAUDE.md: a tight threshold is free there and
+# unaffordable anywhere a test asserts a *clean* verdict, because a clean
+# verdict asserts that nothing stalled the loop, which is not something a
+# test controls. An ordinary generational GC pass in this suite measures
+# 4.3-17.8ms under coverage, and 10ms against a 5ms sampling interval
+# leaves a tick about 15ms of headroom.
 _TIGHT_INI = """
     [pytest]
     asyncio_mode = auto
@@ -56,6 +61,28 @@ _TIGHT_ALL_ASYNC_INI = """
     [pytest]
     asyncio_mode = auto
     loopguard_threshold_ms = 10
+    loopguard_all_async = true
+"""
+
+# Every clean-verdict test uses this instead: 100ms leaves a GC pass five
+# times its worst measured cost before it can fail a test that did nothing
+# wrong, while the 200ms block each of those tests scopes out is still 2x
+# over the bar -- so a window that failed to scope it out still fails the
+# test, and none of them proves any less than it did at 10ms. This is the
+# failure mode that broke test_clean_strict_response_carries_diagnostic_
+# headers once already, and that reproduced here as
+# test_same_helper_passes_with_the_gate_on_and_off failing once in ten
+# full-suite runs under coverage plus background load.
+_GENEROUS_INI = """
+    [pytest]
+    asyncio_mode = auto
+    loopguard_threshold_ms = 100
+"""
+
+_GENEROUS_ALL_ASYNC_INI = """
+    [pytest]
+    asyncio_mode = auto
+    loopguard_threshold_ms = 100
     loopguard_all_async = true
 """
 
@@ -136,7 +163,7 @@ class TestLoopguardPause:
     def test_block_inside_pause_is_not_charged(self, pytester: pytest.Pytester) -> None:
         """The 55-test case from the field report.
 
-        A 200ms block inside the window, under a 10ms threshold, passes.
+        A 200ms block inside the window, under a 100ms threshold, passes.
         """
         pytester.makepyfile("""
             import asyncio
@@ -153,7 +180,7 @@ class TestLoopguardPause:
                     time.sleep(0.2)
                 await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -183,7 +210,7 @@ class TestLoopguardPause:
                 with loopguard_pause():
                     time.sleep(0.2)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -282,7 +309,7 @@ class TestLoopguardPause:
                     await asyncio.sleep(0.02)
                 await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -342,10 +369,18 @@ class TestLoopguardPause:
                 time.sleep(0.2)
                 await asyncio.sleep(0.02)
         """)
-        pytester.makeini(_TIGHT_ALL_ASYNC_INI)
+        pytester.makeini(_GENEROUS_ALL_ASYNC_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, failed=1)
+        # Which one passed and which one failed is the whole claim; the
+        # counts alone hold just as well if the two swapped places.
+        result.stdout.fnmatch_lines(
+            [
+                "*::test_setup_is_scoped_out PASSED*",
+                "*::test_unscoped_still_flags FAILED*",
+            ]
+        )
 
 
 class TestLoopguardOnly:
@@ -375,7 +410,7 @@ class TestLoopguardOnly:
                 with loopguard_only():
                     await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -405,6 +440,44 @@ class TestLoopguardOnly:
         result.assert_outcomes(failed=1)
         assert "Event loop blocking detected" in result.stdout.str()
 
+    def test_only_window_block_without_trailing_await_still_flags(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The `only` mirror of the pause manager's no-trailing-await case.
+
+        `test_only_flags_blocking_inside_the_window` above only holds
+        because it awaits inside the window after the block, which lets the
+        monitor take a turn. A real handler is under no obligation to yield
+        there -- an `httpx.ASGITransport` request does not -- so the window
+        has to stand on its own.
+
+        Entering re-armed the tick and nothing measures it during the
+        block; unless leaving banks that tick *before* it raises
+        suppression, `stop()`'s final poll finds the window already closed
+        and measures nothing. A 200ms stall inside the very region the user
+        asked to measure, scored clean.
+        """
+        pytester.makepyfile("""
+            import time
+
+            import pytest
+
+            from fastapi_loopguard.pytest_plugin import loopguard_only
+
+            @pytest.mark.no_blocking
+            async def test_only_window_block_no_trailing_await():
+                # No await anywhere inside or after the window: leaving it
+                # is the only chance to measure the stall.
+                with loopguard_only():
+                    time.sleep(0.2)
+        """)
+        pytester.makeini(_TIGHT_INI)
+
+        result = pytester.runpytest("--loopguard-report=loopguard.json")
+        result.assert_outcomes(failed=1)
+        assert "Event loop blocking detected" in result.stdout.str()
+        assert _max_lag_ms(_report(pytester)) > 100.0
+
     def test_only_suppresses_blocking_after_the_window(
         self, pytester: pytest.Pytester
     ) -> None:
@@ -429,7 +502,7 @@ class TestLoopguardOnly:
                 time.sleep(0.2)
                 await asyncio.sleep(0.02)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -467,7 +540,60 @@ class TestLoopguardOnly:
         assert "Event loop blocking detected" in result.stdout.str()
         assert _max_lag_ms(_report(pytester)) > 100.0
 
+    def test_exception_inside_only_still_closes_the_window(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The manager must use try/finally, for the opposite reason.
+
+        `loopguard_pause()`'s mirror of this test fails loudly without the
+        try/finally: measurement stays suppressed and a real stall goes
+        unreported. On this side the failure is the other direction. An
+        escaping exception leaves the window never closed, so the rest of
+        the test stays *measured* -- teardown the author deliberately put
+        out of scope starts failing the test, and the manager's promise
+        that "only this window is measured" holds right up until something
+        inside the window raises.
+
+        So the assertion is that the promise survives the exception: the
+        200ms teardown stall after the window is still out of scope.
+        Nothing here depends on a timing margin -- a closed
+        `loopguard_only()` window suppresses every later measurement
+        outright -- but the awaited region inside the window is measured,
+        so this runs on the generous threshold like every other
+        clean-verdict test in this file.
+        """
+        pytester.makepyfile("""
+            import asyncio
+            import time
+
+            import pytest
+
+            from fastapi_loopguard.pytest_plugin import loopguard_only
+
+            @pytest.mark.no_blocking
+            async def test_raises_inside_then_blocks_in_teardown():
+                with pytest.raises(RuntimeError):
+                    with loopguard_only():
+                        await asyncio.sleep(0.01)
+                        raise RuntimeError("the request under test failed")
+                # Teardown, which loopguard_only() took out of scope.
+                await asyncio.sleep(0.02)
+                time.sleep(0.2)
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini(_GENEROUS_INI)
+
+        result = pytester.runpytest("-v")
+        result.assert_outcomes(passed=1, warnings=0)
+        assert "Event loop blocking detected" not in result.stdout.str()
+
     def test_only_under_loopguard_all_async(self, pytester: pytest.Pytester) -> None:
+        """The `only` mirror of the pause manager's all-async case.
+
+        The identities are pinned, not just the counts: `passed=1,
+        failed=1` is equally true of a run where the window suppressed the
+        wrong test.
+        """
         pytester.makepyfile("""
             import asyncio
             import time
@@ -484,10 +610,16 @@ class TestLoopguardOnly:
                 time.sleep(0.2)
                 await asyncio.sleep(0.02)
         """)
-        pytester.makeini(_TIGHT_ALL_ASYNC_INI)
+        pytester.makeini(_GENEROUS_ALL_ASYNC_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, failed=1)
+        result.stdout.fnmatch_lines(
+            [
+                "*::test_setup_out_of_scope PASSED*",
+                "*::test_unscoped_still_flags FAILED*",
+            ]
+        )
 
 
 class TestScopedMeasurementNoOps:
@@ -587,7 +719,7 @@ class TestScopedMeasurementNoOps:
             async def test_uses_the_shared_helper():
                 await build_app()
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         gate_off = pytester.runpytest("-v")
         gate_off.assert_outcomes(passed=1, warnings=0)
@@ -668,7 +800,7 @@ class TestScopedMeasurementInSpawnedTasks:
                 await asyncio.create_task(build_in_a_task())
                 await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1, warnings=0)
@@ -692,7 +824,7 @@ class TestScopedMeasurementReport:
                     time.sleep(0.2)
                 await asyncio.sleep(0.01)
         """)
-        pytester.makeini(_TIGHT_INI)
+        pytester.makeini(_GENEROUS_INI)
 
         result = pytester.runpytest("--loopguard-report=loopguard.json")
         result.assert_outcomes(passed=1)
@@ -707,6 +839,105 @@ class TestScopedMeasurementReport:
         assert record["verdict"] == "clean"
         assert record["events"] == []
         assert record["hints"] == []
+
+
+class _FakeClock:
+    """A monotonic clock a test moves by hand."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class TestWatermarkArithmetic:
+    """What a measurement taken from a watermark credits as expected time.
+
+    Driven straight at `BlockingDetector` with a hand-moved clock rather
+    than through `pytester`, for the same reason `test_cumulative_blocking`
+    drives `SentinelMonitor` directly: the numbers here are exact, and
+    wall-clock timing cannot pin them.
+
+    The tick's `asyncio.sleep` starts at the tick, not at the watermark, so
+    the only expected time left to credit from the watermark onward is
+    whatever of that sleep is still pending -- nothing at all once the
+    sleep would already have ended. Crediting a full monitor interval from
+    every watermark under-reports the first measurement after each window
+    boundary by up to one interval, and a stall just over the threshold
+    that lands in that tick reads as clean. Invariant 9 does not allow a
+    dropped millisecond at a boundary any more than a double-counted one.
+    """
+
+    @staticmethod
+    def _measure(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        tick_start: float,
+        watermark: float | None,
+        measured_at: float,
+    ) -> list[float]:
+        """Run one tick measurement on a hand-moved clock.
+
+        Loop-clock baselines stay None throughout: `_measure_tick`'s drift
+        check is not what is under test here, and there is no running loop
+        in a synchronous test to read one from anyway.
+        """
+        clock = _FakeClock()
+        monkeypatch.setattr(pytest_plugin, "_REAL_MONOTONIC", clock)
+
+        detector = pytest_plugin.BlockingDetector(threshold_ms=1.0)
+        detector._running = True
+        detector._tick_real_start = tick_start
+        detector._tick_loop_start = None
+        detector._tick_consumed = False
+
+        if watermark is not None:
+            clock.now = watermark
+            detector._resume_measurement()
+
+        clock.now = measured_at
+        detector._measure_tick()
+        return detector.blocking_events
+
+    def test_no_watermark_credits_the_whole_interval(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The ordinary case, unchanged: 100ms of tick, 5ms of it expected."""
+        events = self._measure(
+            monkeypatch, tick_start=0.0, watermark=None, measured_at=0.100
+        )
+        assert events == [pytest.approx(95.0)]
+
+    def test_watermark_inside_the_sleep_credits_only_what_is_left_of_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A watermark 2ms into a 5ms sleep leaves 3ms still pending.
+
+        98ms measured from the watermark, 3ms of it expected: 95ms of lag,
+        the same total the unwatermarked tick reports above. The interval
+        is credited exactly once wherever the boundary falls inside it.
+        """
+        events = self._measure(
+            monkeypatch, tick_start=0.0, watermark=0.002, measured_at=0.100
+        )
+        assert events == [pytest.approx(95.0)]
+
+    def test_watermark_past_the_sleep_credits_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The window outlasted the tick's sleep, so no sleep is pending.
+
+        60ms elapsed since the watermark, none of it expected: the loop
+        owed the monitor a resumption from the moment the window closed.
+        Crediting a full interval here would report 55ms, and a genuine
+        56-59ms stall landing in the tick right after a window would come
+        back clean.
+        """
+        events = self._measure(
+            monkeypatch, tick_start=0.0, watermark=0.100, measured_at=0.160
+        )
+        assert events == [pytest.approx(60.0)]
 
 
 # A real FastAPI app, built the way the field report's 55 tests build one:

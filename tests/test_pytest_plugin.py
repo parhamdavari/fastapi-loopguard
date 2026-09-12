@@ -376,6 +376,232 @@ class TestBlockingDetector:
         assert detector.clock_untrusted, "the loop-clock divergence was not caught"
 
 
+class _FakeClock:
+    """A monotonic clock a test moves by hand."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class TestScopedWindowInternals:
+    """Unit cover for corners of the #85 window state.
+
+    All of these are driven end to end in test_scoped_measurement.py too;
+    these reach the states a pytester run does not naturally produce, or
+    assert on a mechanism an end-to-end verdict cannot distinguish from
+    its own absence.
+    """
+
+    def test_loop_time_is_none_off_the_event_loop(self) -> None:
+        """The drift check's second clock is optional, not assumed.
+
+        A context copy carrying the detector can travel into a worker
+        thread (`asyncio.to_thread`), where a helper that scopes its own
+        setup has no loop of its own to read -- and reading one must not
+        raise into that helper.
+        """
+        assert pytest_plugin._loop_time() is None
+
+    def test_nested_only_window_stays_open_until_the_outer_one_closes(self) -> None:
+        """A depth counter, not a boolean, on the `loopguard_only()` side too.
+
+        Driven directly rather than through pytester: only the outermost
+        enter may clear, and only the outermost exit may suppress the rest
+        of the test.
+        """
+        detector = BlockingDetector(threshold_ms=10.0)
+        detector.blocking_events.append(99.0)
+
+        detector.enter_only()
+        assert detector.blocking_events == [], "the first enter did not clear"
+        assert not detector.suppressed
+
+        detector.blocking_events.append(42.0)
+        detector.enter_only()
+        assert detector.blocking_events == [42.0], "a nested enter cleared again"
+
+        detector.exit_only()
+        assert not detector.suppressed, "the inner exit closed the outer window"
+
+        detector.exit_only()
+        assert detector.suppressed, "the outer exit did not suppress the rest"
+
+    async def test_active_detector_is_cleared_after_an_instrumented_test(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """`wrapped()` must reset `_ACTIVE_DETECTOR` from its token (#85).
+
+        The context variable is set immediately before awaiting the test
+        and reset in the same finally. Deleting that reset leaves every
+        end-to-end test in this repo green: pytest runs each test
+        coroutine in a Task, which gets a *copy* of the context, so
+        nothing the wrapper sets leaks anywhere a later test could see it.
+        A left-behind detector is only reachable from inside that same
+        context -- which is exactly where a later `loopguard_pause()` in a
+        no-longer-instrumented helper would find it.
+
+        So the wrapper is driven here directly, on a real collected item,
+        and `wrapped()` is *awaited* rather than run as a task: awaiting a
+        coroutine shares the caller's context, so this test can see what
+        the wrapper left in it. Reading `_ACTIVE_DETECTOR` from a test is
+        the point of this one; the criterion is about that variable.
+
+        The inner test raises its own threshold rather than relying on the
+        default: it asserts a clean verdict, and nothing about this test is
+        meant to depend on how busy the machine is.
+        """
+        item = pytester.getitem(
+            """
+            import pytest
+
+            from fastapi_loopguard import pytest_plugin
+
+            seen = []
+
+            @pytest.mark.no_blocking(threshold_ms=5000)
+            async def test_inner():
+                seen.append(pytest_plugin._ACTIVE_DETECTOR.get())
+            """,
+            "test_inner",
+        )
+        assert isinstance(item, pytest.Function)
+        assert pytest_plugin._ACTIVE_DETECTOR.get() is None
+
+        pytest_plugin.pytest_runtest_call(item)
+        await item.obj()
+
+        (published,) = item.module.seen
+        assert isinstance(published, BlockingDetector), (
+            "the test did not see a detector, so this proves nothing about the reset"
+        )
+        assert pytest_plugin._ACTIVE_DETECTOR.get() is None, (
+            "the detector outlived the test it was instrumenting"
+        )
+
+    def test_loop_clock_watermark_keeps_the_drift_check_running(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`_resume_measurement()` must move the loop clock's baseline too.
+
+        `_measure_tick`'s drift check is guarded by
+        `if loop_start is not None`, so a watermark that moves only the
+        real clock does not misfire -- it silently stops checking, for
+        every measurement after the first window in the test. Both halves
+        below then read `clean`, and the whole suite stays green.
+
+        So the proof that the check still runs has to be a divergence it
+        still catches (second half). The first half is the other half of
+        the same claim: under clocks that agree, a window boundary is not
+        itself read as divergence -- which is what a watermark that moved
+        only one clock, or neither, would do.
+        """
+        real = _FakeClock()
+        monkeypatch.setattr(pytest_plugin, "_REAL_MONOTONIC", real)
+        # The identity check sits above the drift check and returns as
+        # soon as it sees a replaced time.monotonic, so the fake has to be
+        # the real clock too or the drift branch is unreachable.
+        monkeypatch.setattr(time, "monotonic", real)
+
+        loop_clock = _FakeClock()
+        monkeypatch.setattr(pytest_plugin, "_loop_time", loop_clock)
+
+        def measure_after_a_window(*, loop_reads_at_the_end: float) -> BlockingDetector:
+            """One tick: a 200ms pause window, then 50ms measured after it."""
+            detector = BlockingDetector(threshold_ms=1000.0)
+            detector._running = True
+            detector._tick_real_start = 0.0
+            detector._tick_loop_start = 0.0
+            # As the enter-poll would have left it; with the tick already
+            # consumed that poll is a no-op, so this needs no monitor task.
+            detector._tick_consumed = True
+
+            real.now = loop_clock.now = 0.2
+            detector.enter_pause()
+            real.now = loop_clock.now = 0.4
+            detector.exit_pause()
+
+            real.now = 0.45
+            loop_clock.now = loop_reads_at_the_end
+            detector._measure_tick()
+            return detector
+
+        agreeing = measure_after_a_window(loop_reads_at_the_end=0.45)
+        # 50ms of lag against a 1000ms threshold: under the bar, so the
+        # measurement reaches the clock checks instead of returning at the
+        # blocking branch above them.
+        assert agreeing.blocking_events == []
+        assert not agreeing.clock_untrusted, (
+            "the window itself was read as loop-clock divergence"
+        )
+
+        # The loop's own clock stops advancing after the window closes:
+        # 50ms of real time it cannot see, ten times the drift tolerance.
+        diverging = measure_after_a_window(loop_reads_at_the_end=0.4)
+        assert diverging.clock_untrusted, (
+            "the drift check stopped running after the window closed"
+        )
+
+    async def test_leaving_a_pause_re_arms_the_consumed_tick(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`_resume_measurement()` must re-arm `_tick_consumed` (#85).
+
+        Entering the window polls, and that poll consumes the in-flight
+        tick. If leaving does not re-arm it, `stop()`'s final poll refuses
+        to measure that same tick -- and a test that blocks after the
+        window and then returns without ever awaiting (an
+        `httpx.ASGITransport` request does exactly that) has nothing else
+        that would ever measure it. The stall is simply not seen.
+
+        That is invisible to an end-to-end verdict: "nothing was measured"
+        and "a clean measurement" are both a passing test with no
+        warnings, which is why this is asserted here on the mechanism
+        rather than through pytester.
+
+        Driven on a hand-moved clock for the same reason
+        `TestWatermarkArithmetic` is: the numbers are exact and wall-clock
+        timing cannot pin them. Patching `_REAL_MONOTONIC` alone leaves
+        `_measure_tick`'s identity check seeing a replaced clock and
+        marking this detector untrusted -- irrelevant here, since the only
+        assertion is about what got measured.
+        """
+        clock = _FakeClock()
+        monkeypatch.setattr(pytest_plugin, "_REAL_MONOTONIC", clock)
+
+        detector = BlockingDetector(threshold_ms=10.0)
+        detector._running = True
+        # poll() refuses to measure a tick no live task owns, so the
+        # detector needs one. Nothing ever runs in it.
+        detector._task = asyncio.create_task(asyncio.sleep(3600))
+        try:
+            detector._tick_real_start = 0.0
+            detector._tick_loop_start = None
+            detector._tick_consumed = False
+
+            clock.now = 0.001  # 1ms into a 5ms tick: nothing to charge yet
+            detector.enter_pause()
+            assert detector._tick_consumed, "the enter-poll did not consume the tick"
+            assert detector.blocking_events == []
+
+            clock.now = 0.201  # 200ms inside the window, deliberately unmeasured
+            detector.exit_pause()
+
+            clock.now = 0.401  # 200ms after it, with no await in between
+            detector.poll()
+
+            assert detector.blocking_events == [pytest.approx(200.0)], (
+                "the tick straddling the window exit was never re-armed, so the "
+                "200ms stall after the window went unmeasured"
+            )
+        finally:
+            detector._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await detector._task
+
+
 class TestPytestPluginIntegration:
     """Integration tests for pytest plugin using pytester."""
 
