@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import contextlib
 import json
 import re
 import time
@@ -145,6 +146,59 @@ class TestBlockingDetector:
 
         # Should not raise and should be stopped
         assert detector._running is False
+
+    async def test_stop_returns_promptly_under_frozen_clock(self) -> None:
+        """stop() must not hang when time.monotonic is frozen (#83).
+
+        asyncio.BaseEventLoop.time() resolves to time.monotonic() at call
+        time, so freezing it also freezes the deadline of stop()'s own
+        `asyncio.wait_for`. Bounded on real time here by counting
+        call_soon-based turns (`asyncio.sleep(0)`) instead of a wall-clock
+        or asyncio timeout: either of those would depend on the very clock
+        this test freezes, and could hang this test itself.
+        """
+        detector = BlockingDetector(threshold_ms=50.0)
+        await detector.start()
+
+        real_monotonic = time.monotonic
+        frozen = real_monotonic()
+        time.monotonic = lambda: frozen
+        stop_task = asyncio.create_task(detector.stop())
+        try:
+            for _ in range(200):
+                await asyncio.sleep(0)
+                if stop_task.done():
+                    break
+            completed = stop_task.done()
+        finally:
+            time.monotonic = real_monotonic
+            if not stop_task.done():
+                stop_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stop_task
+
+        assert completed, "detector.stop() did not return within 200 no-op turns"
+
+    async def test_poll_records_the_in_flight_tick(self) -> None:
+        """poll() measures a stall in progress instead of waiting for the
+        monitor's own sleep to resume.
+
+        Mirrors SentinelMonitor.poll() in monitor.py (invariant 9): a test
+        that blocks and returns without ever awaiting again would otherwise
+        leave the monitor's pending sleep expired and unrecorded.
+        """
+        detector = BlockingDetector(threshold_ms=10.0)
+        await detector.start()
+        await asyncio.sleep(0.02)  # let the monitor arm its first tick
+
+        time.sleep(0.05)  # block for 50ms, then never await again
+
+        detector.poll()
+
+        await detector.stop()
+
+        assert detector.blocking_events
+        assert max(detector.blocking_events) > 10.0
 
 
 class TestPytestPluginIntegration:
@@ -593,7 +647,7 @@ class TestJsonReport:
         assert report_file.exists()
         report = json.loads(report_file.read_text())
 
-        assert report["schema_version"] == 2
+        assert report["schema_version"] == 3
         assert report["status"] == "blocked"
         assert report["threshold_ms"] == 10.0
         assert report["totals"] == {"tests": 2, "flagged": 1}
@@ -777,7 +831,13 @@ class TestReportSchema:
     def test_schema_validates_a_freshly_generated_report(
         self, pytester: pytest.Pytester
     ) -> None:
-        """A shape change in the plugin that the schema misses fails CI."""
+        """A shape change in the plugin that the schema misses fails CI.
+
+        Uses runpytest_subprocess with a timeout: the clock-tampering test
+        below hangs pytest_plugin's unfixed BlockingDetector.stop(), and an
+        in-process runpytest would wedge this repo's own suite on that
+        regression instead of failing it (see TestClockTampering).
+        """
         pytester.makepyfile("""
             import pytest
             import asyncio
@@ -792,6 +852,11 @@ class TestReportSchema:
             @pytest.mark.no_blocking
             async def test_clean():
                 await asyncio.sleep(0.01)
+
+            @pytest.mark.no_blocking
+            async def test_tampers_with_the_clock(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
         """)
         pytester.makeini("""
             [pytest]
@@ -799,13 +864,38 @@ class TestReportSchema:
             loopguard_threshold_ms = 10
         """)
 
-        result = pytester.runpytest("--loopguard-report=loopguard.json")
-        result.assert_outcomes(failed=1, passed=1)
+        result = pytester.runpytest_subprocess(
+            "--loopguard-report=loopguard.json", timeout=30
+        )
+        assert result.ret == 0
 
         report = json.loads((pytester.path / "loopguard.json").read_text())
         jsonschema.Draft202012Validator(_schema()).validate(report)
-        # The generated report exercises both verdicts and a real event
-        assert {r["verdict"] for r in report["tests"]} == {"blocked", "clean"}
+        # The generated report exercises all three verdicts
+        assert {r["verdict"] for r in report["tests"]} == {
+            "blocked",
+            "clean",
+            "unmeasured",
+        }
+
+    def test_schema_accepts_an_unmeasured_record(self) -> None:
+        """schema_version 3 adds the unmeasured verdict; the schema must
+        allow it, plus its optional `reason` and the new totals fields."""
+        report = _doc_example_report()
+        report["schema_version"] = 3
+        report["totals"]["unmeasured"] = 1
+        report["totals"]["measured"] = len(report["tests"])
+        report["tests"].append(
+            {
+                "nodeid": "tests/test_x.py::test_tampered_clock",
+                "verdict": "unmeasured",
+                "events": [],
+                "hints": [],
+                "reason": "event loop clock did not advance during this test",
+            }
+        )
+
+        jsonschema.Draft202012Validator(_schema()).validate(report)
 
     def test_schema_requires_the_top_level_status(self) -> None:
         """The schema has teeth: a pre-status report no longer validates."""
@@ -855,3 +945,222 @@ class TestDetectorArmedBeforeTestBody:
         result = pytester.runpytest("-v")
         result.assert_outcomes(failed=1)
         assert "Event loop blocking detected" in result.stdout.str()
+
+
+class TestClockTampering:
+    """#83: a test that replaces time.monotonic must not wedge the suite.
+
+    asyncio.BaseEventLoop.time() is `return time.monotonic()`, resolved on
+    the `time` module at call time. A test anywhere that does
+    `monkeypatch.setattr(time, "monotonic", ...)` freezes every asyncio
+    timer for as long as the patch is active, including the deadline of
+    BlockingDetector.stop()'s own `asyncio.wait_for` — an await that
+    cannot finish, bounded by a timeout that cannot fire either.
+
+    Every test in this class that lets a frozen clock reach stop() uses
+    `runpytest_subprocess` with an explicit `timeout`, never the in-process
+    `runpytest` used elsewhere in this file: in-process, the unfixed defect
+    hangs the *outer* suite forever instead of failing one test.
+    """
+
+    def test_frozen_clock_suite_does_not_hang(self, pytester: pytest.Pytester) -> None:
+        """The single most important test in this file.
+
+        A suite containing one test that freezes time.monotonic must run to
+        completion. Against the unfixed source this test does not fail in
+        the ordinary sense — it hangs, and `runpytest_subprocess(timeout=...)`
+        is what turns that hang into a bounded, reportable failure
+        (`Pytester.TimeoutExpired`) instead of wedging this repo's own CI.
+        """
+        pytester.makepyfile("""
+            import time
+            import pytest
+
+            @pytest.mark.no_blocking
+            async def test_tampers_with_the_clock(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest_subprocess(timeout=60)
+        assert result.ret == 0
+
+    def test_frozen_clock_test_reports_unmeasured_with_reason_and_totals(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """The tampered test is reported unmeasured, never silently clean."""
+        pytester.makepyfile("""
+            import time
+            import pytest
+
+            @pytest.mark.no_blocking
+            async def test_tampers_with_the_clock(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest_subprocess(
+            "--loopguard-report=loopguard.json", timeout=30
+        )
+        assert result.ret == 0
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        assert report["status"] == "clean"
+        assert report["totals"]["unmeasured"] == 1
+        assert report["totals"]["measured"] == 0
+        [record] = report["tests"]
+        assert record["verdict"] == "unmeasured"
+        assert record["reason"]
+
+    def test_frozen_clock_under_all_async_passes_with_warning(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """loopguard_all_async: an unmeasured test still just warns."""
+        pytester.makepyfile("""
+            import time
+
+            async def test_tampers_with_the_clock(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_all_async = true
+        """)
+
+        result = pytester.runpytest_subprocess(timeout=30)
+        result.assert_outcomes(passed=1, warnings=1)
+
+    def test_frozen_clock_under_explicit_marker_passes_with_warning(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """@pytest.mark.no_blocking: an unmeasured test is not a new failure.
+
+        Deliberate product decision: the plugin cannot prove the test is
+        clean, but it must not punish the test for that with a failure it
+        would not otherwise have had.
+        """
+        pytester.makepyfile("""
+            import time
+            import pytest
+
+            @pytest.mark.no_blocking
+            async def test_tampers_with_the_clock(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest_subprocess(timeout=30)
+        result.assert_outcomes(passed=1, warnings=1)
+
+    def test_clock_frozen_then_restored_is_still_unmeasured(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """Drift, not identity, is what must catch this.
+
+        The clock is back to normal by the time the plugin could inspect
+        `time.monotonic`, so an identity check (`time.monotonic is
+        original`) would wrongly call this trustworthy. 30ms of real time
+        passes while the loop's clock cannot see it, which a drift check
+        (real elapsed vs. the loop's own elapsed) catches regardless. The
+        threshold is generous (200ms) so this stays unmeasured, not
+        blocked — that distinction is TestClockTampering's other case.
+        """
+        pytester.makepyfile("""
+            import time
+            import asyncio
+            import pytest
+
+            @pytest.mark.no_blocking
+            async def test_tampers_then_restores(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+                time.sleep(0.03)  # real time the frozen loop clock can't see
+                monkeypatch.undo()
+                await asyncio.sleep(0.02)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 200
+        """)
+
+        result = pytester.runpytest_subprocess(
+            "--loopguard-report=loopguard.json", timeout=30
+        )
+        assert result.ret == 0
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        [record] = report["tests"]
+        assert record["verdict"] == "unmeasured"
+
+    def test_frozen_clock_and_real_blocking_is_blocked_not_unmeasured(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """Observed blocking beats a missing measurement (issue #83).
+
+        The clock stays frozen for the rest of the test (never restored),
+        so this only completes at all once the fix measures against a
+        clock immune to the tampering — the same mechanism the first test
+        in this class depends on. That real 200ms block must still win a
+        "blocked" verdict over "unmeasured".
+        """
+        pytester.makepyfile("""
+            import time
+            import pytest
+
+            @pytest.mark.no_blocking
+            async def test_tampers_and_blocks(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+                time.sleep(0.2)  # 200ms real block, clock stays frozen
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+            loopguard_threshold_ms = 50
+        """)
+
+        result = pytester.runpytest_subprocess(
+            "--loopguard-report=loopguard.json", timeout=30
+        )
+        assert result.ret == 0
+
+        report = json.loads((pytester.path / "loopguard.json").read_text())
+        [record] = report["tests"]
+        assert record["verdict"] == "blocked"
+
+    def test_terminal_summary_names_the_unmeasured_count(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        """pytest_terminal_summary must name how many tests were unmeasured."""
+        pytester.makepyfile("""
+            import time
+            import pytest
+
+            @pytest.mark.no_blocking
+            async def test_tampers_with_the_clock(monkeypatch):
+                frozen = time.monotonic()
+                monkeypatch.setattr(time, "monotonic", lambda: frozen)
+        """)
+        pytester.makeini("""
+            [pytest]
+            asyncio_mode = auto
+        """)
+
+        result = pytester.runpytest_subprocess(timeout=30)
+        assert result.ret == 0
+        assert "1 unmeasured" in result.stdout.str()
