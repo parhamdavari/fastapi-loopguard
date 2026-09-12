@@ -540,3 +540,102 @@ class TestEndToEnd:
         report_path = pytester.path / "loopguard.json"
         assert main(["report", str(report_path)]) == EXIT_CLEAN
         assert "loopguard: clean" in capsys.readouterr().out
+
+
+class TestPerTestThresholdInFlaggedLines:
+    """Tests for issue #84's CLI side: _flagged_lines should append the
+    per-test threshold only when it differs from the session default.
+    _summary_line's format must stay untouched either way.
+
+    None of this is implemented yet: _flagged_lines never reads a
+    `threshold_ms` field off the test record today.
+    """
+
+    def test_flagged_line_carries_the_per_test_threshold_when_it_differs(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A record whose threshold_ms (500.0) differs from the top-level
+        session default (10.0) must surface that override on its flagged
+        line. Today _flagged_lines ignores threshold_ms entirely, so the
+        line never mentions 500.
+        """
+        report = {
+            "schema_version": 2,
+            "status": "blocked",
+            "threshold_ms": 10.0,
+            "totals": {"tests": 1, "flagged": 1},
+            "tests": [
+                {
+                    "nodeid": "tests/test_api.py::test_bounded_worst_case",
+                    "verdict": "blocked",
+                    "threshold_ms": 500.0,
+                    "events": [{"lag_ms": 612.3, "threshold_ms": 500.0}],
+                    "hints": [],
+                }
+            ],
+        }
+        assert main(["report", _write(tmp_path, report)]) == EXIT_BLOCKED
+        lines = capsys.readouterr().out.splitlines()
+        flagged = next(line for line in lines if "test_bounded_worst_case" in line)
+        assert "worst_lag=612.3ms" in flagged
+        assert "500" in flagged, (
+            "the per-test threshold (500.0, overriding the session default "
+            "of 10.0) must appear on the flagged line"
+        )
+
+    def test_flagged_line_omits_the_threshold_when_it_matches_the_default(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Characterization test, not a gap: _flagged_lines never appends a
+        threshold today, so a per-test value equal to the session default
+        already renders exactly as before. Cannot be made to fail against
+        the unfixed source; kept to pin the "only when it differs" half of
+        the contract once the override is implemented.
+        """
+        report = {
+            "schema_version": 2,
+            "status": "blocked",
+            "threshold_ms": 50.0,
+            "totals": {"tests": 1, "flagged": 1},
+            "tests": [
+                {
+                    "nodeid": "tests/test_api.py::test_upload",
+                    "verdict": "blocked",
+                    "threshold_ms": 50.0,
+                    "events": [{"lag_ms": 61.5, "threshold_ms": 50.0}],
+                    "hints": [],
+                }
+            ],
+        }
+        assert main(["report", _write(tmp_path, report)]) == EXIT_BLOCKED
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[1] == (
+            "  blocked tests/test_api.py::test_upload  worst_lag=61.5ms"
+        )
+
+    def test_summary_line_exact_text_is_unaffected_by_per_test_overrides(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Locks _summary_line's format: a per-test threshold_ms field on a
+        record must never leak into the session-level line, which always
+        reports the top-level (session default) threshold. Already true
+        today; not expected to fail against the unfixed source.
+        """
+        report = {
+            "schema_version": 2,
+            "status": "blocked",
+            "threshold_ms": 10.0,
+            "totals": {"tests": 1, "flagged": 1},
+            "tests": [
+                {
+                    "nodeid": "t.py::test_x",
+                    "verdict": "blocked",
+                    "threshold_ms": 500.0,
+                    "events": [{"lag_ms": 20.0, "threshold_ms": 500.0}],
+                    "hints": [],
+                }
+            ],
+        }
+        assert main(["report", _write(tmp_path, report)]) == EXIT_BLOCKED
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[0] == "loopguard: blocked  tests=1  flagged=1  threshold=10.0ms"
