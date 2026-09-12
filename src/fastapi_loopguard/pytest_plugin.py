@@ -104,11 +104,20 @@ def _loop_time() -> float | None:
     """The running loop's own clock, or None when there is no loop.
 
     Only ever compared against another reading of the same clock, never
-    against the real one on its own -- see `_measure_tick`. Returns None
-    off the loop, which the scoped-measurement managers can reach: a
-    context copy carrying the detector travels into a worker thread
-    (`asyncio.to_thread`), and a helper that pauses there has no loop of
-    its own to read.
+    against the real one on its own -- see `_measure_tick`.
+
+    Returning None off the loop rather than raising is a robustness
+    measure, not an invitation. A context copy carrying the detector does
+    travel into a worker thread (`asyncio.to_thread`), and this read is
+    the only thing in this module that is safe to do from there. Opening
+    or closing a window is not: the depth counters, the watermarks and
+    `_tick_consumed` are plain attributes mutated with no synchronisation
+    at all, and the monitor task mutates the same attributes concurrently
+    on the loop thread. CLAUDE.md's invariant 3 -- no locks, because
+    asyncio is single-threaded -- is the premise the rest of this module
+    rests on too, and a worker thread is exactly where it stops holding.
+    So `loopguard_pause()` and `loopguard_only()` must be entered and left
+    on the event loop thread.
     """
     try:
         loop = asyncio.get_running_loop()
@@ -527,6 +536,15 @@ def loopguard_pause() -> Iterator[None]:
     still flags. Nests: a helper that pauses inside a caller's pause
     leaves the caller's window intact. A no-op, raising and warning
     nothing, when the plugin is not instrumenting the test.
+
+    **Enter and leave this on the event loop thread.** A task the test
+    spawned is fine -- it shares the loop, and the window state is on the
+    detector, which the inherited context points at. A worker thread is
+    not: that state is mutated without any synchronisation, and the
+    monitor task is mutating it concurrently on the loop thread. To scope
+    work that runs in a worker thread, wrap the
+    `await asyncio.to_thread(...)` call itself rather than the function
+    the thread runs.
     """
     detector = _ACTIVE_DETECTOR.get()
     if detector is None:
@@ -568,6 +586,12 @@ def loopguard_only() -> Iterator[None]:
     shows that. Prefer `loopguard_pause()` in a helper, which gives back
     exactly what it took; keep `loopguard_only()` in the test body, where a
     reader can see what it covers.
+
+    **Enter and leave this on the event loop thread**, for the same reason
+    `loopguard_pause()` says so: the window state is mutated with no
+    synchronisation and the monitor task mutates it concurrently on the
+    loop thread. A task the test spawned shares that thread and is fine; a
+    worker thread is not.
     """
     detector = _ACTIVE_DETECTOR.get()
     if detector is None:
