@@ -1084,46 +1084,60 @@ class TestClockTampering:
         result = pytester.runpytest_subprocess(timeout=30)
         result.assert_outcomes(passed=1, warnings=1)
 
-    def test_clock_frozen_then_restored_is_still_unmeasured(
+    def test_block_behind_a_freeze_then_restore_is_still_caught_by_the_pinned_clock(
         self, pytester: pytest.Pytester
     ) -> None:
-        """Drift, not identity, is what must catch this.
+        """A freeze fully undone before LoopGuard next runs leaves no trace
+        -- but the pinned clock catches a block behind it regardless.
 
-        The clock is back to normal by the time the plugin could inspect
-        `time.monotonic`, so an identity check (`time.monotonic is
-        original`) would wrongly call this trustworthy. 30ms of real time
-        passes while the loop's clock cannot see it, which a drift check
-        (real elapsed vs. the loop's own elapsed) catches regardless. The
-        threshold is generous (200ms) so this stays unmeasured, not
-        blocked — that distinction is TestClockTampering's other case.
+        This class used to assert this scenario was "unmeasured", on the
+        theory that a real-vs-loop drift check could catch a freeze even
+        after it was undone. It cannot: while the clock is frozen the loop
+        never runs, so nothing here executes to observe it, and once
+        restored every start-to-stop comparison reads the same source
+        again -- "tampered, then fully restored" and "slow but healthy"
+        produce identical measurements, by construction (see CLAUDE.md's
+        invariant 9 and FINDINGS.md). Chasing that distinction anyway is
+        what produced real false positives on this project's own
+        bounded-worst-case test pattern, documented elsewhere in this file.
+
+        What *is* true, and worth protecting, is this: `poll()` never
+        trusted `time.monotonic` to begin with -- it measures the in-flight
+        tick against `_REAL_MONOTONIC`, pinned at import -- so a block that
+        happens behind the freeze is still measured as lag, honestly,
+        whether or not the clock was ever put back. The verdict here is
+        `blocked`, not `unmeasured`: the detector was never actually blind
+        to it. The block and threshold are both generous (200ms over
+        10ms) because this asserts detection, not absence of it.
         """
         pytester.makepyfile("""
             import time
-            import asyncio
             import pytest
 
             @pytest.mark.no_blocking
-            async def test_tampers_then_restores(monkeypatch):
+            async def test_tampers_then_restores_but_still_blocks(monkeypatch):
                 frozen = time.monotonic()
                 monkeypatch.setattr(time, "monotonic", lambda: frozen)
-                time.sleep(0.03)  # real time the frozen loop clock can't see
+                time.sleep(0.2)  # real block behind the freeze
                 monkeypatch.undo()
-                await asyncio.sleep(0.02)
         """)
         pytester.makeini("""
             [pytest]
             asyncio_mode = auto
-            loopguard_threshold_ms = 200
+            loopguard_threshold_ms = 10
         """)
 
         result = pytester.runpytest_subprocess(
             "--loopguard-report=loopguard.json", timeout=30
         )
-        assert result.ret == 0
+        # The block clears the threshold by a wide margin, so it fails --
+        # a "blocked" verdict fails by design, same as any other blocked
+        # test in this file.
+        result.assert_outcomes(failed=1)
 
         report = json.loads((pytester.path / "loopguard.json").read_text())
         [record] = report["tests"]
-        assert record["verdict"] == "unmeasured"
+        assert record["verdict"] == "blocked"
 
     def test_frozen_clock_and_real_blocking_is_blocked_not_unmeasured(
         self, pytester: pytest.Pytester

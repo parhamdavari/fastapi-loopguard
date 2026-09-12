@@ -52,15 +52,21 @@ _REAL_MONOTONIC = time.monotonic
 # The monitor's own sampling interval.
 _MONITOR_INTERVAL_SEC = 0.005
 
-# How much a tick's real-clock elapsed time may exceed one monitor interval,
-# on a tick that did not itself cross threshold_ms, before the clock that
-# produced it is no longer trusted. One interval, per #83.
+# How far a pending tick's real-clock elapsed time may diverge from what
+# the loop's own clock reports for the same tick before that clock is no
+# longer trusted -- e.g. a custom loop clock, or time.monotonic still
+# replaced when this is checked. One monitor interval (#83). Deliberately
+# not applied to a tick's lag on its own: see _measure_tick's docstring for
+# why that produced false positives on a legitimate long block, and why a
+# freeze fully undone before this runs cannot be caught by any timing-only
+# check regardless of the tolerance chosen (CLAUDE.md invariant 9,
+# FINDINGS.md).
 _CLOCK_DRIFT_TOLERANCE_SEC = _MONITOR_INTERVAL_SEC
 
 _CLOCK_UNTRUSTED_REASON = (
     "the event loop clock could not be trusted during this test (it may "
-    "have been replaced, frozen, or unable to advance for a time) -- any "
-    "blocking may have gone unmeasured"
+    "still be replaced or frozen, or the loop's own clock diverged from "
+    "the real one) -- any blocking may have gone unmeasured"
 )
 
 # Version of the JSON report contract. Bump on any shape change; the
@@ -159,10 +165,14 @@ class BlockingDetector:
     def clock_untrusted(self) -> bool:
         """Whether this test's event loop clock could not be trusted.
 
-        True once a measurement observed `time.monotonic` replaced, the
-        loop's own clock diverging from the real one by more than one
-        monitor interval, or a tick's unaccounted real-clock lag exceeding
-        one interval without itself crossing `threshold_ms`.
+        True once a measurement observed `time.monotonic` still replaced,
+        or the loop's own clock diverging from the real one by more than
+        one monitor interval while a tick was pending. Deliberately not
+        based on a tick's lag alone: a freeze fully undone before this
+        detector next runs is indistinguishable from a slow but healthy
+        tick (see CLAUDE.md and FINDINGS.md) -- and `poll()` measures every
+        tick against the pinned real clock regardless, so a block behind
+        such a freeze is still caught as lag, not lost.
         """
         return self._clock_untrusted
 
@@ -209,11 +219,22 @@ class BlockingDetector:
         """Measure the in-flight tick and record it exactly once.
 
         Blocking (lag over threshold) wins outright, since it is positive
-        evidence that stands on its own. Short of that, an untrustworthy
-        clock -- still replaced, diverged from the real one, or a tick with
-        more unaccounted real-clock lag than one monitor interval -- marks
-        the test `unmeasured` rather than `clean`: the sentinel cannot prove
+        evidence that stands on its own -- measured against the pinned real
+        clock, so it stands regardless of what `time.monotonic` says or
+        said. Short of that, an untrustworthy clock -- still replaced, or
+        diverged from the real one while this tick was pending -- marks the
+        test `unmeasured` rather than `clean`: the sentinel cannot prove
         nothing blocked when it cannot prove it was watching reliably.
+
+        Deliberately does not treat a tick's own lag, on its own, as
+        evidence of an untrustworthy clock: a freeze that is fully undone
+        before this method runs looks identical, in every measurement
+        available afterwards, to a slow but healthy tick -- see CLAUDE.md's
+        invariant 9 and FINDINGS.md. Trying to catch that case anyway
+        produced real false positives on a long, deliberate block under a
+        raised per-test `@pytest.mark.no_blocking(threshold_ms=...)` --
+        exactly the legitimate, documented use this detector must not
+        punish.
         """
         assert self._tick_real_start is not None
         self._tick_consumed = True
@@ -234,10 +255,6 @@ class BlockingDetector:
             loop_elapsed = asyncio.get_running_loop().time() - self._tick_loop_start
             if abs(real_elapsed - loop_elapsed) > _CLOCK_DRIFT_TOLERANCE_SEC:
                 self._clock_untrusted = True
-                return
-
-        if lag_ms > _CLOCK_DRIFT_TOLERANCE_SEC * 1000:
-            self._clock_untrusted = True
 
     async def stop(self) -> None:
         """Stop the blocking detector.
