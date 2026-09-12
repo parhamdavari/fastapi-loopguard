@@ -846,6 +846,13 @@ class TestReportSchema:
         below hangs pytest_plugin's unfixed BlockingDetector.stop(), and an
         in-process runpytest would wedge this repo's own suite on that
         regression instead of failing it (see TestClockTampering).
+
+        The inner suite is expected to have exactly one failing test:
+        test_blocks genuinely blocks past its threshold, and a "blocked"
+        verdict fails by design (that is the entire point of
+        @pytest.mark.no_blocking). Asserting the inner run's outcomes
+        directly, rather than decoding a bare exit code, keeps that
+        expectation visible to the next reader.
         """
         pytester.makepyfile("""
             import pytest
@@ -876,7 +883,9 @@ class TestReportSchema:
         result = pytester.runpytest_subprocess(
             "--loopguard-report=loopguard.json", timeout=30
         )
-        assert result.ret == 0
+        # test_blocks fails (blocked verdict, by design); test_clean and the
+        # clock-tampering test both pass, the latter with one warning.
+        result.assert_outcomes(failed=1, passed=2, warnings=1)
 
         report = json.loads((pytester.path / "loopguard.json").read_text())
         jsonschema.Draft202012Validator(_schema()).validate(report)
@@ -1126,6 +1135,10 @@ class TestClockTampering:
         clock immune to the tampering — the same mechanism the first test
         in this class depends on. That real 200ms block must still win a
         "blocked" verdict over "unmeasured".
+
+        The inner test is expected to fail: a "blocked" verdict fails by
+        design (@pytest.mark.no_blocking's whole point), and a tampered
+        clock must not become a way to dodge that gate.
         """
         pytester.makepyfile("""
             import time
@@ -1146,7 +1159,10 @@ class TestClockTampering:
         result = pytester.runpytest_subprocess(
             "--loopguard-report=loopguard.json", timeout=30
         )
-        assert result.ret == 0
+        # The single inner test genuinely blocks past its threshold, so it
+        # fails -- that is not a regression, it is the blocking gate doing
+        # its job even under a tampered clock.
+        result.assert_outcomes(failed=1)
 
         report = json.loads((pytester.path / "loopguard.json").read_text())
         [record] = report["tests"]
