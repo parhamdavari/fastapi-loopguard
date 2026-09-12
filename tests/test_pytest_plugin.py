@@ -327,6 +327,54 @@ class TestBlockingDetector:
             "start()'s fast-path identity check did not see the already-tampered clock"
         )
 
+    def test_drift_check_catches_a_custom_loop_clock(self) -> None:
+        """The drift check (loop.time() vs. the pinned real clock) has no
+        test of its own elsewhere: every clock-tampering scenario in this
+        file patches `time.monotonic` itself, which the (cheaper) identity
+        check in `_measure_tick` catches first -- the drift branch right
+        below it never runs for any of them. Zeroing
+        `_CLOCK_DRIFT_TOLERANCE_SEC` does not turn any of those red.
+
+        This is deliberately the one case an identity check on
+        `time.monotonic` cannot catch at all: a custom event loop whose own
+        `time()` disagrees with the real clock without `time.monotonic`
+        ever being touched (issue #83 names this alongside monkeypatch,
+        freezegun, and a C-level patcher). I could not find a way to reach
+        this branch other than actually constructing one -- a loop whose
+        `time()` is wrong is the thing the branch exists to catch, so nothing
+        short of one exercises it. `asyncio.new_event_loop()` returns a
+        plain-Python `SelectorEventLoop` with no `__slots__`, so replacing
+        the *instance's* `time` is enough; no subclass needed.
+
+        `await asyncio.sleep(interval)` inside `_monitor()` schedules its
+        wakeup via this same broken `time()` (through `call_later`), so it
+        never fires -- the tick armed at `start()` is still the pending one
+        when `stop()` runs. That does not matter here: `poll()` measures it
+        synchronously against the pinned real clock regardless, exactly as
+        it does under a frozen `time.monotonic`.
+        """
+        loop = asyncio.new_event_loop()
+        frozen_loop_time = loop.time()
+        loop.time = lambda: frozen_loop_time  # type: ignore[method-assign]
+
+        async def scenario() -> BlockingDetector:
+            detector = BlockingDetector(threshold_ms=50.0)
+            await detector.start()
+            # Real time the loop's own (frozen) clock cannot see -- large
+            # enough to clear the 5ms drift tolerance, well under the 50ms
+            # blocking threshold so this does not also trip that check.
+            time.sleep(0.015)
+            await detector.stop()
+            return detector
+
+        try:
+            detector = loop.run_until_complete(scenario())
+        finally:
+            loop.close()
+
+        assert not detector.blocking_events, "the block should stay under threshold"
+        assert detector.clock_untrusted, "the loop-clock divergence was not caught"
+
 
 class TestPytestPluginIntegration:
     """Integration tests for pytest plugin using pytester."""
