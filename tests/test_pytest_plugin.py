@@ -1279,11 +1279,11 @@ class TestClockTampering:
         result = pytester.runpytest_subprocess(timeout=30)
         result.assert_outcomes(passed=1, warnings=1)
 
-    def test_block_behind_a_freeze_then_restore_is_still_caught_by_the_pinned_clock(
+    def test_block_behind_a_freeze_then_restore_is_still_caught(
         self, pytester: pytest.Pytester
     ) -> None:
-        """A freeze fully undone before LoopGuard next runs leaves no trace
-        -- but the pinned clock catches a block behind it regardless.
+        """A block that happens behind a freeze-and-restore is still
+        caught at all -- not lost along with the (undetectable) tamper.
 
         This class used to assert this scenario was "unmeasured", on the
         theory that a real-vs-loop drift check could catch a freeze even
@@ -1296,14 +1296,22 @@ class TestClockTampering:
         what produced real false positives on this project's own
         bounded-worst-case test pattern, documented elsewhere in this file.
 
-        What *is* true, and worth protecting, is this: `poll()` never
-        trusted `time.monotonic` to begin with -- it measures the in-flight
-        tick against `_REAL_MONOTONIC`, pinned at import -- so a block that
-        happens behind the freeze is still measured as lag, honestly,
-        whether or not the clock was ever put back. The verdict here is
-        `blocked`, not `unmeasured`: the detector was never actually blind
-        to it. The block and threshold are both generous (200ms over
-        10ms) because this asserts detection, not absence of it.
+        This test does *not* exercise the pinned clock's own value, despite
+        its former name claiming otherwise: by the time `poll()` measures,
+        `monkeypatch.undo()` has already restored `time.monotonic`, so the
+        real clock and the loop's clock agree again -- measuring against
+        `loop.time()` instead of the pinned `_REAL_MONOTONIC` passes this
+        test exactly the same way (verified: swapping the two in
+        `_measure_tick` does not fail it). What it actually protects is
+        narrower and still worth having: a block is not silently dropped
+        just because it happened while the clock was tampered with, even
+        after the tamper itself becomes unprovable. The sibling case where
+        the pinned clock is load-bearing -- the clock is *still* frozen when
+        `poll()` runs -- is
+        `test_frozen_clock_and_real_blocking_is_blocked_not_unmeasured`
+        above; swapping the two clocks there does fail it. The block and
+        threshold are both generous (200ms over 10ms) because this asserts
+        detection, not absence of it.
         """
         pytester.makepyfile("""
             import time
