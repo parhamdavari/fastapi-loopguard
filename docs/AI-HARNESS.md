@@ -106,6 +106,30 @@ the moment it returns, and nothing at the call site shows that. Put
 in a helper, reach for `loopguard_pause()`, which gives back exactly what
 it took.
 
+**A window covers the test, not the block, and not the task.** The plugin
+measures lag on the event loop the whole test shares, so it cannot scope
+suppression to the task that opened the window. A window held open in one
+task therefore blinds the check for everything running alongside it:
+
+```python
+async def sibling():
+    with loopguard_pause():
+        await asyncio.sleep(0.4)     # holds the window open for 400ms
+
+async def real_work():
+    time.sleep(0.3)                  # a genuine stall, in no window at all
+
+@pytest.mark.no_blocking
+async def test_concurrent():
+    await asyncio.gather(sibling(), real_work())   # passes; real_work()
+                                                   # alone fails at ~299ms
+```
+
+Narrowing that would mean attributing lag to a task, which the sentinel
+cannot do — it measures the loop, not call stacks. So the rule is a rule
+for the caller: keep a window around synchronous setup, and never hold one
+open across an `await` that runs concurrently with the work under test.
+
 ## The `loopguard` command
 
 Installing the package also installs a `loopguard` console script, for an
