@@ -6,6 +6,7 @@ import ast
 import asyncio
 import contextlib
 import json
+import logging
 import re
 import time
 from pathlib import Path
@@ -246,6 +247,47 @@ class TestBlockingDetector:
         assert monitor_task.done(), "monitor task leaked: still pending"
         assert monitor_task.cancelled()
         assert detector._running is False
+
+    async def test_stop_retrieves_the_monitor_exception_even_if_already_done(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """stop() must retrieve (and log) the monitor task's exception even
+        when that task already finished by raising before stop() runs.
+
+        The cancel-and-await block used to be guarded by
+        `if task is not None and not task.done()`, so an already-finished,
+        already-raised monitor task skipped the block entirely and its
+        exception was never retrieved -- asyncio surfaces that later as an
+        unattributed "Task exception was never retrieved" instead of the
+        warning this module logs.
+        """
+
+        async def _boom(self: BlockingDetector) -> None:
+            raise RuntimeError("monitor exploded")
+
+        monkeypatch.setattr(BlockingDetector, "_monitor", _boom)
+
+        detector = BlockingDetector(threshold_ms=50.0)
+        await detector.start()
+
+        # Let the patched monitor task run to completion -- it raises
+        # immediately, with nothing to await.
+        assert detector._task is not None
+        for _ in range(50):
+            if detector._task.done():
+                break
+            await asyncio.sleep(0)
+        assert detector._task.done(), "monitor task never finished raising"
+
+        with caplog.at_level(logging.WARNING, logger="fastapi_loopguard"):
+            await detector.stop()
+
+        assert any(
+            "LoopGuard blocking detector failed" in record.message
+            for record in caplog.records
+        )
 
 
 class TestPytestPluginIntegration:

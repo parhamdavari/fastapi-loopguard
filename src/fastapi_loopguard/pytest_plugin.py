@@ -299,19 +299,24 @@ class BlockingDetector:
         self._running = False
         task = self._task
         self._task = None
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                current = asyncio.current_task()
-                if current is not None and current.cancelling():
-                    raise
-            except Exception:
-                # This runs in the finally of every instrumented test. An
-                # exception from the monitor must not replace the test's
-                # own failure with a confusing one.
-                logger.warning("LoopGuard blocking detector failed", exc_info=True)
+        if task is None:
+            return
+        task.cancel()
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+        except Exception:
+            # This runs in the finally of every instrumented test. An
+            # exception from the monitor must not replace the test's own
+            # failure with a confusing one. Retrieved unconditionally --
+            # including when the task had already finished by raising
+            # before we got here -- so asyncio never resurfaces it later
+            # as an unattributed "Task exception was never retrieved".
+            logger.warning("LoopGuard blocking detector failed", exc_info=True)
 
     async def _monitor(self) -> None:
         """Monitor for blocking."""
