@@ -206,6 +206,47 @@ class TestBlockingDetector:
         assert detector.blocking_events
         assert max(detector.blocking_events) > 10.0
 
+    async def test_stop_cancelled_at_its_own_await_does_not_leak_the_monitor(
+        self,
+    ) -> None:
+        """A cancellation delivered while stop() is suspended must not be
+        able to skip cancelling the monitor task.
+
+        Reproduces a real defect: an earlier stop() opened with
+        `await asyncio.sleep(0)` before ever calling `task.cancel()`. A
+        cancellation delivered right there raised immediately and skipped
+        every line after it -- the monitor task was never told to stop,
+        orphaning it on the loop, and (in the real wrapped() path) the
+        exception would propagate past stop() before the test's report
+        record could be appended. The fix moves capturing the task,
+        clearing `_task`, flipping `_running`, and cancelling all before
+        any `await`, so cancelling stop() at its own (now only) await
+        point must still find the monitor task already told to stop.
+        """
+        detector = BlockingDetector(threshold_ms=50.0)
+        await detector.start()
+        monitor_task = detector._task
+        assert monitor_task is not None
+
+        stop_task = asyncio.create_task(detector.stop())
+        await asyncio.sleep(0)  # let stop() run up to its own first await
+        assert not stop_task.done(), "stop() finished before it could be cancelled"
+
+        stop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stop_task
+
+        # Bounded, not a fixed sleep: give the already-cancelled monitor
+        # task the turns it needs to actually finish unwinding.
+        for _ in range(50):
+            if monitor_task.done():
+                break
+            await asyncio.sleep(0)
+
+        assert monitor_task.done(), "monitor task leaked: still pending"
+        assert monitor_task.cancelled()
+        assert detector._running is False
+
 
 class TestPytestPluginIntegration:
     """Integration tests for pytest plugin using pytester."""

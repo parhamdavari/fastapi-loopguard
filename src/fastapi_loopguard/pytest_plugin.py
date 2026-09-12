@@ -260,30 +260,43 @@ class BlockingDetector:
         """Stop the blocking detector.
 
         Runs inside test finally blocks, so it must not swallow a
-        cancellation aimed at the test itself (e.g. a timeout plugin).
+        cancellation aimed at the test itself (e.g. a timeout plugin) --
+        and, just as important, a cancellation aimed at *this* coroutine
+        must not be able to skip cancelling the monitor task either.
+        Capturing and clearing `_task`, flipping `_running`, and calling
+        `task.cancel()` therefore all happen synchronously, with no
+        `await` ahead of them, mirroring `SentinelMonitor._cancel_and_wait`
+        in monitor.py, whose first statement is the cancel for the same
+        reason.
 
-        Measures the in-flight tick, then cancels the monitor task instead
-        of draining it (#83): the drain's own `asyncio.wait_for` deadline is
-        scheduled on the same loop clock a tampered test can freeze, so it
-        can wait forever behind a timeout that can never fire either.
-        Cancelling a task suspended in `asyncio.sleep` resolves through
-        `call_soon`, not the timer heap, so it completes even when
-        `time.monotonic` is frozen.
+        An earlier version of this method opened with
+        `await asyncio.sleep(0)` before any of that, reasoning it was a
+        call_soon hop and therefore safe to await even under a frozen
+        clock. It is safe from the clock, but it is still a cancellation
+        point: a cancellation delivered there (e.g. a timeout plugin
+        firing while this method is suspended) raised immediately and
+        skipped every line after it -- the monitor task was never told to
+        stop, orphaning it on the loop, and the exception propagated past
+        this method before `pytest_plugin.wrapped()`'s own `finally` could
+        append the test's report record, the same defect class already
+        fixed for the marker-validation path.
+
+        Measures the in-flight tick before any of that (`poll()`, like
+        `SentinelMonitor.poll()`, refuses to measure once `_running` is
+        false) -- this is the last chance to catch a tick still in flight,
+        since the monitor task is cancelled immediately after and never
+        gets a turn of its own to measure it (#83). `poll()` and
+        `_measure_tick()` are both synchronous, so this cannot itself be
+        interrupted by a cancellation.
         """
         if not self._running:
             return
 
-        # A call_soon hop, never a timer -- safe to await even when every
-        # asyncio timer is frozen (#83).
-        await asyncio.sleep(0)
-
-        # Measure the in-flight tick before flipping _running: poll() (like
-        # SentinelMonitor.poll()) refuses to measure once the monitor is no
-        # longer running, since a stopped monitor's tick marker belongs to a
-        # tick that will never complete.
+        # Always the last measurement of this tick: the monitor task is
+        # cancelled right below and never gets another turn to measure it.
         self.poll()
-        self._running = False
 
+        self._running = False
         task = self._task
         self._task = None
         if task is not None and not task.done():
@@ -296,8 +309,8 @@ class BlockingDetector:
                     raise
             except Exception:
                 # This runs in the finally of every instrumented test. An
-                # exception from the monitor must not replace the test's own
-                # failure with a confusing one.
+                # exception from the monitor must not replace the test's
+                # own failure with a confusing one.
                 logger.warning("LoopGuard blocking detector failed", exc_info=True)
 
     async def _monitor(self) -> None:
