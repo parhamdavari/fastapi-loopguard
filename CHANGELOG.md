@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 (2026-09-13)
+
+A way to measure part of a test instead of all of it. From the same field
+report as 0.8.0: on a route-unit suite, 55 of 66 flagged tests were not
+blocking handlers at all, only slow app construction in the test body.
 
 ### Added
 
