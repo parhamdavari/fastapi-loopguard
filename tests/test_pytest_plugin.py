@@ -376,11 +376,23 @@ class TestBlockingDetector:
         assert detector.clock_untrusted, "the loop-clock divergence was not caught"
 
 
-class TestScopedWindowInternals:
-    """Unit cover for two corners of the #85 window state.
+class _FakeClock:
+    """A monotonic clock a test moves by hand."""
 
-    Both are driven end to end in test_scoped_measurement.py; these reach
-    the states a pytester run does not naturally produce.
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class TestScopedWindowInternals:
+    """Unit cover for corners of the #85 window state.
+
+    All of these are driven end to end in test_scoped_measurement.py too;
+    these reach the states a pytester run does not naturally produce, or
+    assert on a mechanism an end-to-end verdict cannot distinguish from
+    its own absence.
     """
 
     def test_loop_time_is_none_off_the_event_loop(self) -> None:
@@ -416,6 +428,63 @@ class TestScopedWindowInternals:
 
         detector.exit_only()
         assert detector.suppressed, "the outer exit did not suppress the rest"
+
+    async def test_leaving_a_pause_re_arms_the_consumed_tick(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`_resume_measurement()` must re-arm `_tick_consumed` (#85).
+
+        Entering the window polls, and that poll consumes the in-flight
+        tick. If leaving does not re-arm it, `stop()`'s final poll refuses
+        to measure that same tick -- and a test that blocks after the
+        window and then returns without ever awaiting (an
+        `httpx.ASGITransport` request does exactly that) has nothing else
+        that would ever measure it. The stall is simply not seen.
+
+        That is invisible to an end-to-end verdict: "nothing was measured"
+        and "a clean measurement" are both a passing test with no
+        warnings, which is why this is asserted here on the mechanism
+        rather than through pytester.
+
+        Driven on a hand-moved clock for the same reason
+        `TestWatermarkArithmetic` is: the numbers are exact and wall-clock
+        timing cannot pin them. Patching `_REAL_MONOTONIC` alone leaves
+        `_measure_tick`'s identity check seeing a replaced clock and
+        marking this detector untrusted -- irrelevant here, since the only
+        assertion is about what got measured.
+        """
+        clock = _FakeClock()
+        monkeypatch.setattr(pytest_plugin, "_REAL_MONOTONIC", clock)
+
+        detector = BlockingDetector(threshold_ms=10.0)
+        detector._running = True
+        # poll() refuses to measure a tick no live task owns, so the
+        # detector needs one. Nothing ever runs in it.
+        detector._task = asyncio.create_task(asyncio.sleep(3600))
+        try:
+            detector._tick_real_start = 0.0
+            detector._tick_loop_start = None
+            detector._tick_consumed = False
+
+            clock.now = 0.001  # 1ms into a 5ms tick: nothing to charge yet
+            detector.enter_pause()
+            assert detector._tick_consumed, "the enter-poll did not consume the tick"
+            assert detector.blocking_events == []
+
+            clock.now = 0.201  # 200ms inside the window, deliberately unmeasured
+            detector.exit_pause()
+
+            clock.now = 0.401  # 200ms after it, with no await in between
+            detector.poll()
+
+            assert detector.blocking_events == [pytest.approx(200.0)], (
+                "the tick straddling the window exit was never re-armed, so the "
+                "200ms stall after the window went unmeasured"
+            )
+        finally:
+            detector._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await detector._task
 
 
 class TestPytestPluginIntegration:
