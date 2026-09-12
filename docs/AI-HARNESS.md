@@ -173,7 +173,7 @@ subcommand exits 2.
       "threshold_ms": 50.0,
       "events": [],
       "hints": [],
-      "reason": "the event loop clock could not be trusted during this test (it may have been replaced, frozen, or unable to advance for a time) -- any blocking may have gone unmeasured"
+      "reason": "the event loop clock could not be trusted during this test (it may still be replaced or frozen, or the loop's own clock diverged from the real one) -- any blocking may have gone unmeasured"
     }
   ]
 }
@@ -209,11 +209,18 @@ A test's blocking detector times every tick against the real system clock,
 pinned when the plugin loads, precisely so it keeps working when the test
 under it replaces `time.monotonic` — the same function every asyncio timer
 resolves to. When that clock still cannot be trusted for the whole test
-(still replaced at teardown, or the loop's own clock provably fell behind
-it for a while), the verdict is `"unmeasured"`, never a silent `"clean"`:
-the plugin cannot rule out blocking it was not able to watch for. Positive
-evidence still wins outright — a test that both tampers with the clock and
-genuinely blocks past its threshold is `"blocked"`, not `"unmeasured"`.
+(still replaced when the plugin checks, or the loop's own clock provably
+diverged from the pinned one while a tick was pending), the verdict is
+`"unmeasured"`, never a silent `"clean"`: the plugin cannot rule out
+blocking it was not able to watch for. Positive evidence still wins
+outright — a test that both tampers with the clock and genuinely blocks
+past its threshold is `"blocked"`, not `"unmeasured"`, because ticks are
+always measured against the pinned clock regardless of what
+`time.monotonic` currently says. That is also why a test that freezes the
+clock and restores it before the plugin checks again can report normally
+(`"clean"` or `"blocked"`, depending on whether it also blocked) instead
+of `"unmeasured"`: a fully undone tamper leaves nothing to detect, but a
+real block behind it is still caught as lag either way.
 
 An unmeasured test is not a new failure: it keeps its own pass or fail
 result, under `loopguard_all_async` and under an explicit
