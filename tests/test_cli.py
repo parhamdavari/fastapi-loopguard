@@ -280,6 +280,53 @@ class TestSchemaV1Fallback:
         assert "loopguard: clean" in capsys.readouterr().out
 
 
+class TestRequireMeasured:
+    """--require-measured: opt-in gate for #83's untrusted-clock verdict.
+
+    schema_version 3 adds an "unmeasured" verdict for a test whose clock
+    could not be trusted (see TestClockTampering in test_pytest_plugin.py).
+    Default exit codes must not change for it; --require-measured is how a
+    caller that wants a hard guarantee opts in.
+    """
+
+    _UNMEASURED_REPORT: dict[str, Any] = {
+        "schema_version": 3,
+        "status": "clean",
+        "threshold_ms": 50.0,
+        "totals": {"tests": 1, "flagged": 0, "unmeasured": 1, "measured": 0},
+        "tests": [
+            {
+                "nodeid": "tests/test_x.py::test_tampered_clock",
+                "verdict": "unmeasured",
+                "events": [],
+                "hints": [],
+                "reason": "event loop clock did not advance during this test",
+            }
+        ],
+    }
+
+    def test_require_measured_exits_two_when_any_test_is_unmeasured(
+        self, tmp_path: Path
+    ) -> None:
+        path = _write(tmp_path, self._UNMEASURED_REPORT)
+        assert main(["report", path, "--require-measured"]) == EXIT_ERROR
+
+    def test_without_the_flag_an_unmeasured_report_still_exits_zero(
+        self, tmp_path: Path
+    ) -> None:
+        """Default exit codes are unchanged: --require-measured is opt-in."""
+        path = _write(tmp_path, self._UNMEASURED_REPORT)
+        assert main(["report", path]) == EXIT_CLEAN
+
+    def test_v2_report_with_no_unmeasured_key_exits_zero_with_the_flag(
+        self, tmp_path: Path
+    ) -> None:
+        """A schema_version 2 report predates the unmeasured concept
+        entirely; --require-measured must not punish it for that."""
+        path = _write(tmp_path, _CLEAN_REPORT)
+        assert main(["report", path, "--require-measured"]) == EXIT_CLEAN
+
+
 class TestMalformed:
     """Every unusable report is exit 2 with one line on stderr."""
 
