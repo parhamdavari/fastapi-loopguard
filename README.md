@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.7.0/assets/loopguard-logo.webp" alt="LoopGuard" width="280" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.9.0/assets/loopguard-logo.webp" alt="LoopGuard" width="280" />
 </p>
 
 <p align="center">
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.7.0/assets/demo.gif" alt="LoopGuard demo: a fast endpoint passes, a blocking endpoint fails with a 503, and the console banner explains why" width="800" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.9.0/assets/demo.gif" alt="LoopGuard demo: a fast endpoint passes, a blocking endpoint fails with a 503, and the console banner explains why" width="800" />
 </p>
 
 ---
@@ -157,7 +157,7 @@ The HTML page below is served when the request's `Accept` header contains
 report as JSON:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.7.0/assets/error-page.gif" alt="Strict mode error page" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.9.0/assets/error-page.gif" alt="Strict mode error page" width="600" />
 </p>
 
 ---
@@ -166,7 +166,7 @@ report as JSON:
 Adds diagnostic headers to every response for debugging:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.7.0/assets/error-page-screenshot-endpoint.png" alt="Warn mode headers" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.9.0/assets/error-page-screenshot-endpoint.png" alt="Warn mode headers" width="600" />
 </p>
 
 ---
@@ -177,7 +177,7 @@ text by default, JSON if you install LoopGuard's formatter with
 [`configure_logging(structured=True)`](https://github.com/parhamdavari/fastapi-loopguard/blob/main/docs/CONFIGURATION.md#log-output-and-json-formatting):
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.7.0/assets/error-page-screenshot-console.png" alt="Console output" width="600" />
+  <img src="https://raw.githubusercontent.com/parhamdavari/fastapi-loopguard/v0.9.0/assets/error-page-screenshot-console.png" alt="Console output" width="600" />
 </p>
 
 ---
