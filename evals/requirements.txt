@@ -2,7 +2,7 @@
 
 # The API adapters. The local adapter works without them.
 anthropic>=1.4.0
-openai>=3.8.0
+openai>=3.13.0
 
 # Optional FastAPI dependencies a *solution* may reach for. Without these the
 # judge fails the sample at import time and the harness's missing dependency is
